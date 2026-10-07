@@ -1,0 +1,58 @@
+{
+  "name": "@urbankitstudio/cli",
+  "version": "0.1.0",
+  "description": "uks: the UrbanKit Studio command line. Plans, quota and usage for your API key, address-to-parcel lookups, county requests, and offline county discovery from the County Parcel REST API Atlas. JSON output and stable exit codes for agents.",
+  "keywords": [
+    "parcel",
+    "arcgis",
+    "gis",
+    "county",
+    "assessor",
+    "cli",
+    "api",
+    "agents",
+    "real-estate",
+    "property"
+  ],
+  "homepage": "https://urbankitstudio.com/parcel-atlas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/urbankitstudio/cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/urbankitstudio/cli/issues"
+  },
+  "author": "UrbanKit Studio <contact@urbankitstudio.com>",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "uks": "./dist/uks.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@urbankitstudio/atlas": "^0.6.19"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
