@@ -1,0 +1,71 @@
+# Is the published @urbankitstudio/cli current? Asked every day.
+#
+# WHY IT EXISTS. On 2026-09-26 Leo made the surfaces AI agents install -- the
+# atlas package, the MCP servers, and this CLI -- the FIRST surface of every
+# UrbanKit Studio change. That order holds only if a lag gets noticed, and the
+# fact that shows a lag lives OUTSIDE this repo: the version npm serves. So no
+# hermetic test can catch it, and ci.yml cannot.
+#
+# WHAT IT ASKS (detail in the header of scripts/check-package-currency.mjs):
+#   PUBLISH LAG    npm's latest against package.json here, including "npm has
+#                  no such package at all"
+# A CLI carries no data, so the atlas repo's DATA LAG and UNBUMPED DATA checks
+# have nothing to compare here and are left out rather than faked.
+# The script's own tests run first, so a check that has stopped checking goes
+# red before it gets the chance to pass.
+#
+# WHY NOT ON PUSH OR PULL REQUEST. It needs the network, and a network flake
+# must never become a required check: a gate that fails on a DNS hiccup trains
+# people to re-run it without reading. ci.yml stays the hermetic gate for
+# pushes; this one reports once a day, where a red gets read.
+#
+# WHY 07:40 UTC. The monorepo's mirror push into this repo runs at 07:05, the
+# mcp-atlas repo's check at 07:10 and the atlas repo's at 07:25. This runs after
+# the day's mirror push has landed and contends with none of them.
+#
+# THIS FILE SURVIVES THE MIRROR. The monorepo's cli-sync-push.yml rsyncs
+# packages/cli over this repo with --delete, excluding .github/ and scripts/,
+# the paths this repo owns. Anything added here outside those is deleted by
+# the next sync.
+#
+# GitHub disables schedules in a repo with 60 days of no activity, and the
+# monorepo once saw a schedule stay unregistered until its cron expression
+# changed. If this never runs, nudge the minute before doubting the file.
+
+name: Package currency
+
+on:
+  schedule:
+    - cron: '40 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: package-currency
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  currency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Nothing here pushes, so the token is not kept in the checkout. No
+      # history walk either, so a shallow clone is enough.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+
+      # No `npm ci`: the script and its tests use only node builtins and
+      # global fetch, so no dependency can break or slow the check.
+      - name: The check's own tests
+        run: node --test scripts/package-currency.test.mjs
+
+      - name: npm against this checkout
+        run: node scripts/check-package-currency.mjs

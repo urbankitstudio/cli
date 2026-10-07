@@ -1,0 +1,17 @@
+# Line endings are pinned to LF because this repo's contents are SYNCED from
+# urbankitstudio/urbankitstudio (`packages/cli`), not edited here.
+#
+# Without this the sync is at the mercy of whoever runs it. The first seed of
+# the sibling atlas mirror was measured: 74 files differed between the monorepo
+# and that repo's checkout, and only 9 of those were real content changes. The
+# other 65 were a CRLF checkout on one side meeting LF sources on the other.
+# Git's `core.autocrlf` happened to absorb them that time, but that is a
+# per-machine setting -- a Linux runner or a contributor without it produces
+# commits that change nothing, burying the ones that matter.
+#
+# `text=auto eol=lf` makes the working tree LF everywhere, so what the sync
+# copies in is byte-identical to what git already has and the diff is the real
+# change and nothing else.
+* text=auto eol=lf
+
+*.json text eol=lf

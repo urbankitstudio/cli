@@ -1,0 +1,339 @@
+# Publish @urbankitstudio/cli to npm over OIDC Trusted Publishing.
+#
+# 🔴 THE FILENAME OF THIS FILE IS LOAD-BEARING. npm's Trusted Publisher entry
+# names a repository AND a workflow filename, and it matches BOTH exactly. If
+# the entry says `publish.yaml` and this file is `publish.yml`, every publish
+# fails at the OIDC exchange with:
+#
+#     npm error code E404
+#     npm error 404 Not Found - PUT https://registry.npmjs.org/@urbankitstudio%2fcli
+#
+# npm returns 404 rather than 403 for an unauthorised OIDC publish, so that
+# error looks like a missing package and is not one.
+#
+# Read the entry with `npm trust list @urbankitstudio/cli`, and set it with
+# `npm trust github @urbankitstudio/cli --repo urbankitstudio/cli --file
+# publish.yml --env npm-publish --allow-publish`. Both need an interactive 2FA
+# challenge on the first call.
+#
+# 🔴 THE FIRST VERSION CANNOT BE PUBLISHED FROM HERE. npm's own docs for
+# `npm trust` (CLI v11) list as a prerequisite: "Package must exist: The package
+# you're configuring must already exist on the npm registry." The npmjs.com
+# form lives under the PACKAGE's settings page, which does not exist before a
+# first publish. So 0.1.0 goes out by hand (Leo, `npm login` + `npm publish
+# --access public` from a clean clone of this repo), and only then can the
+# Trusted Publisher entry be created. Until it exists, a release run here fails
+# at `npm publish`; the Publish step says so in words instead of leaving a bare
+# E404 to decode.
+#
+# 🔴 TICK "npm publish" ON THE ENTRY. npm's docs: configurations created after
+# 2026-09-03 "are automatically set to allow `npm stage publish`, and you can
+# choose whether to also permit direct publishing with `npm publish`". This
+# workflow runs `npm publish`, so an entry left at its default refuses it. On
+# the command line that choice is `--allow-publish`.
+#
+# 🔴 A NEW ENTRY EXPIRES IN TWO DAYS UNLESS IT PUBLISHES. npm's docs: "A newly
+# created trusted publisher configuration must complete its first successful
+# publish within 2 days." An expired entry cannot be edited; delete it and
+# create a new one when the next version is ready to ship.
+#
+# WHERE THIS PACKAGE IS AUTHORED, because it is not here. `packages/cli` in
+# urbankitstudio/urbankitstudio is the source, beside the API routes it calls.
+# Contents arrive by an automated sync push. A version bump is made THERE,
+# syncs here, and this workflow reacts to it.
+#
+# WHY PUBLISH FROM HERE AT ALL. npm attaches a provenance attestation
+# automatically on an OIDC publish from a PUBLIC repository, which is impossible
+# from a private one. The monorepo is private; this repo is public.
+#
+# 🔴 THE `npm-publish` ENVIRONMENT MUST EXIST AND MUST BE RESTRICTED TO `main`.
+# GitHub creates an environment on first reference with NO protection rules, so
+# a merely-referenced environment is not a control. Its deployment-branch rule
+# is the outer guard that keeps this job from starting on any other ref; the
+# `release` gate below is the inner one. Both, because the outer one is a
+# setting somebody can change in a web UI without touching this file.
+#
+# NO NODE_AUTH_TOKEN ANYWHERE. npm mints a short-lived credential from the OIDC
+# identity minted by `permissions: id-token: write` below. There is no npm token
+# in this repo's secrets and there must not be one.
+
+name: Publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run every gate but do not publish'
+        type: boolean
+        # 🔴 DEFAULTS TO TRUE. A dispatch without `-f dry_run=false` is a
+        # rehearsal: it publishes nothing and still concludes green. A green run
+        # is NOT a publish. The registry is the only proof.
+        default: true
+
+concurrency:
+  group: publish-cli
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# GitHub's DEFAULT shell for `run:` on Linux is `bash -e {0}` -- WITHOUT
+# pipefail. Naming bash explicitly gets `bash --noprofile --norc -eo pipefail
+# {0}`. It matters in a job that publishes: `npm pack | tail -1` would otherwise
+# swallow a pack failure and hand the verifier an empty filename, and a check
+# that cannot fail is worse here than anywhere else in the repo.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # A hung job holds a MINTABLE npm publish identity for GitHub's default six
+    # hours.
+    timeout-minutes: 15
+    # npm checks the OIDC token for an `environment` claim once the Trusted
+    # Publisher entry names one, and GitHub only puts that claim in the token
+    # when the JOB declares an environment -- it is not inherited from the
+    # repository, and it is not optional once npm expects it. Setting the field
+    # on npm BEFORE this line exists breaks publishing in between; that is how
+    # mcp-atlas 0.2.5 came to be released. Use the same name, `npm-publish`, on
+    # the npm entry.
+    environment: npm-publish
+    permissions:
+      contents: read
+      # This is what mints the OIDC identity npm exchanges for a publish
+      # credential. Without it the publish fails as if unauthorised.
+      #
+      # 🔴 IT IS A JOB-LEVEL PERMISSION, so the token-minting environment
+      # variables are present for EVERY step, not just the publish. That is why
+      # the ref check below lives in the `release` gate rather than only on the
+      # Publish step: `npm ci` and `npm pack` execute package lifecycle scripts,
+      # and gating only the last step would still run them with a mintable
+      # publish identity in scope.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A release is "package.json names a version the registry does not have".
+      # Asked of the REGISTRY rather than of git: the sync pushes on every
+      # change under packages/cli, most of which carry no bump, and a publish
+      # that failed is retried by the next push instead of being forgotten
+      # because the version no longer "changed".
+      #
+      # Runs BEFORE setup-node on purpose. With `registry-url` set, setup-node
+      # writes an .npmrc whose auth token is a placeholder, and this read must
+      # not depend on how the registry treats one.
+      #
+      # 🔴 THREE ANSWERS, AND "COULD NOT ASK" IS NOT ONE OF THE TWO GOOD ONES.
+      # `npm view <pkg> versions --json` exits 0 with the version list when the
+      # package exists, and exits 1 with `{"error":{"code":"E404",...}}` on
+      # stdout when it has never been published (measured 2026-10-06 against
+      # @urbankitstudio/cli itself). E404 means "never published", which is a
+      # release. Any other failure -- DNS, a 5xx, a rate limit -- is refused:
+      # guessing "release" would run a publish blind, and guessing "not a
+      # release" would skip one in silence.
+      - name: Is this a release, and from the right ref?
+        id: bump
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          NEW=$(node -p "require('./package.json').version")
+
+          # 🔴 VALIDATED BEFORE ANYTHING IS WRITTEN TO $GITHUB_OUTPUT, and with
+          # node rather than grep. `grep -Eq '^...$'` anchors PER LINE, so a
+          # version containing a newline passes, and `echo "version=$NEW"`
+          # then writes a second line that forges `release=true`. A JS regex
+          # without /m anchors the WHOLE string, and passing the value as argv
+          # keeps it out of the shell entirely.
+          if ! node -e "process.exit(/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/.test(process.argv[1]) ? 0 : 1)" "$NEW"; then
+            echo "::error::package.json version is not a plain semver. Refusing to continue."
+            exit 1
+          fi
+
+          set +e
+          VIEW=$(npm view @urbankitstudio/cli versions --json --registry https://registry.npmjs.org 2>/dev/null)
+          RC=$?
+          set -e
+          STATE=$(printf '%s' "$VIEW" | node -e '
+            const [rc, version] = process.argv.slice(1);
+            let body;
+            try { body = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch { body = undefined; }
+            if (rc === "0") {
+              const list = Array.isArray(body) ? body : typeof body === "string" ? [body] : null;
+              console.log(list === null ? "unknown" : list.includes(version) ? "published" : "unpublished");
+            } else {
+              console.log(body?.error?.code === "E404" ? "never" : "unknown");
+            }
+          ' "$RC" "$NEW")
+          echo "ref=$REF event=$EVENT version=$NEW registry=$STATE (npm view exit $RC)"
+          if [ "$STATE" = "unknown" ]; then
+            echo "::error::could not read @urbankitstudio/cli from the registry (npm view exit $RC). This is NOT a verdict either way; re-run."
+            exit 1
+          fi
+
+          # 🔴 THE REF CHECK IS PART OF `release`, NOT JUST OF `Publish`.
+          # Every heavy step below is gated on this output, and several of them
+          # run repo-controlled npm lifecycle scripts while the job holds a
+          # mintable publish identity. The cost is that a feature branch cannot
+          # be rehearsed here; ci.yml already gates feature branches.
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "not on main ($REF) - nothing will run" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$STATE" != "published" ]; then
+            # A dispatch always counts as a release attempt, including a
+            # re-dispatch at a published version, as a rehearsal.
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "$NEW is already on the registry - not a release" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "registry=$STATE" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+
+      # A push to main is a real release, by design -- that is how a synced
+      # version bump ships. A manual dispatch is a REHEARSAL unless dry_run was
+      # explicitly unchecked.
+      #
+      # 🔴 WHICH WAY THIS FAILS IS THE WHOLE POINT. Anything that is not the
+      # exact string "false" -- including empty -- is a dry run. Written the
+      # obvious way round (`inputs.dry_run || false`) a renamed or removed input
+      # collapses to `false`, and a dispatch that meant to rehearse PUBLISHES.
+      # Here the same mistake costs a wasted run rather than a release.
+      - name: Decide dry run
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          DRY_INPUT: ${{ inputs.dry_run }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$DRY_INPUT" = "false" ]; then dry=false; else dry=true; fi
+          else
+            dry=false
+          fi
+          echo "event=$EVENT dry_run input='$DRY_INPUT' -> dry=$dry"
+          echo "dry=$dry" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Bounded to major 11, NOT pinned. `npm@11` is a semver range and resolves
+      # to the newest 11.x at run time, inside the job that holds the OIDC
+      # identity -- so the publish tool does move under a release, it just
+      # cannot cross a major. Trusted publishing needs npm 11.5.1 or later.
+      # Runs on dry runs too: a rehearsal that skips a step cannot rehearse it.
+      - name: Upgrade npm for OIDC publishing
+        if: ${{ steps.bump.outputs.release == 'true' }}
+        run: |
+          npm install -g npm@11
+          echo "npm $(npm --version)"
+
+      - name: Install
+        if: ${{ steps.bump.outputs.release == 'true' }}
+        run: npm ci
+
+      - name: Gate (typecheck, test, build)
+        if: ${{ steps.bump.outputs.release == 'true' }}
+        run: |
+          npm run typecheck
+          npm test
+          npm exec -- tsup --config tsup.config.ts
+
+      # The SAME script ci.yml runs, against the EXTRACTED TARBALL. Sharing one
+      # implementation is the point: two inline copies drift, and the weaker one
+      # is always the one guarding the registry.
+      - name: Verify the package that would ship
+        if: ${{ steps.bump.outputs.release == 'true' }}
+        run: |
+          TARBALL=$(npm pack --silent | tail -1)
+          echo "packed: $TARBALL"
+          mkdir -p /tmp/verify-cli
+          tar -xzf "$TARBALL" -C /tmp/verify-cli
+          node scripts/verify-package.mjs /tmp/verify-cli/package "$PWD"
+
+      # Only on a real publish. A dry run at an already-published version is a
+      # legitimate rehearsal, and failing it would make the rehearsal useless
+      # exactly when you most want one.
+      - name: This version is not already on the registry
+        if: ${{ steps.bump.outputs.release == 'true' && steps.mode.outputs.dry != 'true' }}
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          REGISTRY: ${{ steps.bump.outputs.registry }}
+        run: |
+          if [ "$REGISTRY" = "published" ]; then
+            echo "::error::@urbankitstudio/cli@$VERSION is already published. Bump the version in the MONOREPO (packages/cli), not here."
+            exit 1
+          fi
+          echo "$VERSION is not on the registry yet (registry state: $REGISTRY)"
+
+      # No NODE_AUTH_TOKEN: npm mints a short-lived credential from the OIDC
+      # identity above. A 404 or "not configured for trusted publishing" here
+      # means the Trusted Publisher entry on npmjs.com does not name THIS repo,
+      # THIS filename and THIS environment exactly, or does not allow
+      # `npm publish`. See the header.
+      #
+      # `--ignore-scripts`: the Gate step already ran typecheck, test and build, and
+      # the verifier read the packed result. Without the flag npm runs
+      # prepublishOnly (and every pre/post hook of the scripts it calls) again HERE,
+      # after the verifier, so a changed `build` or an added `postbuild` would ship
+      # output nobody verified (proven by review 2026-10-07 on npm 11.19.1).
+      - name: Publish
+        id: publish
+        if: ${{ steps.mode.outputs.dry != 'true' && steps.bump.outputs.release == 'true' }}
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          REGISTRY: ${{ steps.bump.outputs.registry }}
+        run: |
+          # Idempotent on purpose, so a re-run after a downstream failure is not
+          # refused just because the version already landed.
+          if npm publish --access public --ignore-scripts; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif npm view "@urbankitstudio/cli@$VERSION" version >/dev/null 2>&1; then
+            echo "::warning::$VERSION is already on the registry; treating this publish as already done."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          elif [ "$REGISTRY" = "never" ]; then
+            echo "::error::@urbankitstudio/cli has never been published, and npm's Trusted Publisher entry can only be created for a package that already exists. Publish $VERSION by hand first (npm login, then npm publish --access public from a clean clone of this repo), then create the entry. See this file's header."
+            exit 1
+          else
+            echo "::error::publish failed and $VERSION is NOT on the registry."
+            exit 1
+          fi
+
+      # Values reach this step through `env:`, never through an expression
+      # interpolated inside `run:`. An expression interpolated into a shell IS
+      # shell, and this step is `if: always()`, so it runs even after every gate
+      # has failed -- the worst place to have a sink.
+      - name: Report
+        if: ${{ always() }}
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          RELEASE: ${{ steps.bump.outputs.release }}
+          REGISTRY: ${{ steps.bump.outputs.registry }}
+          DRY: ${{ steps.mode.outputs.dry }}
+          PUBLISHED: ${{ steps.publish.outputs.published || 'no' }}
+        run: |
+          {
+            echo "### @urbankitstudio/cli"
+            echo ""
+            echo "- version: \`$VERSION\`"
+            echo "- registry before this run: \`$REGISTRY\`"
+            echo "- release: \`$RELEASE\`"
+            echo "- dry run: \`$DRY\`"
+            echo "- published: \`$PUBLISHED\`"
+            echo ""
+            echo "A green run is NOT a publish. Confirm on the registry:"
+            echo ""
+            echo '```'
+            echo "npm view @urbankitstudio/cli version"
+            echo '```'
+            echo ""
+            echo "npm's \`/latest\` has lagged a concluded run by ~80 seconds before, so an immediate read is not evidence of failure."
+          } >> "$GITHUB_STEP_SUMMARY"

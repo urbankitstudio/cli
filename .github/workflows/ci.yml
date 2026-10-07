@@ -1,0 +1,103 @@
+# Gate every push and PR to @urbankitstudio/cli.
+#
+# WHAT THIS REPO IS, because it changes what CI is for. The package is AUTHORED
+# in urbankitstudio/urbankitstudio, under `packages/cli`, beside the API routes
+# it calls, so a route change and the CLI change ship in one PR there. This repo
+# is where it PUBLISHES from, and its contents arrive by an automated sync push
+# from the monorepo (`cli-sync-push.yml`).
+#
+# So this is not a code review gate -- nobody hand-edits files here. It is a
+# check that what arrived is installable, type-clean, passing its own tests, and
+# packable into a `uks` that runs. A sync that lands something broken fails here
+# rather than on the registry.
+#
+# 🔴 THIS WORKFLOW CANNOT STOP A PUBLISH, AND THAT IS WHY THE REAL CHECKS LIVE
+# IN A SCRIPT. It and publish.yml trigger independently on a push to main, with
+# no `needs:` between them, so a red run here does not block a release. The
+# atlas repo's first version had exactly that hole: the package checks in CI
+# were stronger than the ones in publish.yml, so the only gate that could
+# actually block a publish was the weaker one. Both call
+# `scripts/verify-package.mjs`, one implementation, so they cannot drift.
+#
+# One Node version, as in the atlas repo. The bundle targets node22 and
+# package.json says `engines.node >=22`; add a matrix here if that floor ever
+# needs proving rather than declaring.
+#
+# It deliberately does not run on a schedule. A repo whose contents only change
+# when the monorepo pushes has nothing to re-check in between.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# GitHub's DEFAULT shell for `run:` on Linux is `bash -e {0}` -- WITHOUT
+# pipefail. Naming bash explicitly gets `bash --noprofile --norc -eo pipefail
+# {0}`. It matters below: `npm pack | tail -1` would otherwise swallow a pack
+# failure and hand the next step an empty filename.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # tsup by its config path, the form the monorepo's packages/cli/CLAUDE.md
+      # documents. `prepublishOnly` still runs `npm run build` on a real publish.
+      - name: Build
+        run: npm exec -- tsup --config tsup.config.ts
+
+      # Against the EXTRACTED TARBALL, never the working tree: `files` and
+      # .npmignore decide what ships, and the working tree does not. The
+      # verifier asserts the exact five-file list (the `npm pack --dry-run`
+      # check from packages/cli/CLAUDE.md, made strict), the shebang, and that
+      # the packed bin answers `--version` with the packed version. The second
+      # argument is where `npm ci` put @urbankitstudio/atlas, which the bundle
+      # keeps external.
+      - name: Verify the package that would ship
+        run: |
+          TARBALL=$(npm pack --silent | tail -1)
+          echo "packed: $TARBALL"
+          mkdir -p /tmp/verify-cli
+          tar -xzf "$TARBALL" -C /tmp/verify-cli
+          node scripts/verify-package.mjs /tmp/verify-cli/package "$PWD"
+
+      - name: Report
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### @urbankitstudio/cli CI"
+            echo ""
+            echo "- gates: install, typecheck, test, build, then \`scripts/verify-package.mjs\` against the packed tarball"
+            echo ""
+            echo "This repo's contents are synced from \`urbankitstudio/urbankitstudio\` (\`packages/cli\`). Fix problems THERE, not here -- an edit made in this repo is overwritten by the next sync."
+          } >> "$GITHUB_STEP_SUMMARY"
