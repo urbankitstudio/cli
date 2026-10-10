@@ -1,6 +1,6 @@
 {
   "name": "@urbankitstudio/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "uks: the UrbanKit Studio command line. Plans, quota and usage for your API key, address-to-parcel lookups, county requests, and offline county discovery from the County Parcel REST API Atlas. JSON output and stable exit codes for agents.",
   "keywords": [
     "parcel",
@@ -26,7 +26,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "uks": "./dist/uks.js"
+    "uks": "dist/uks.js"
   },
   "files": [
     "dist",

@@ -10,13 +10,13 @@ Node.js 22 or newer. The only runtime dependency is
 
 ## Install
 
-Once published:
-
 ```sh
-npx @urbankitstudio/cli --help
+npx @urbankitstudio/cli --help      # run once without installing
+npm install -g @urbankitstudio/cli  # or install the uks command
+uks --help
 ```
 
-Until then, from the monorepo:
+From the monorepo, for development:
 
 ```sh
 npm --prefix packages/cli ci

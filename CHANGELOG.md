@@ -1,6 +1,12 @@
 # @urbankitstudio/cli Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1 (2026-10-10)
+
+- The `bin` entry is `dist/uks.js` (no leading `./`), the form npm normalizes to, so `npm publish` no longer warns that it auto-corrected `package.json`. The `uks` command was installed either way.
+- The README's install section shows the published package.
+- First release published from `urbankitstudio/cli` over npm Trusted Publishing (OIDC), with provenance.
+
+## 0.1.0 (2026-10-10)
 
 First version of `uks`, the UrbanKit Studio command line.
 
