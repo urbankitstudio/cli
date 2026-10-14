@@ -4,6 +4,7 @@ import { resolveKey } from "../credentials.js";
 import { EXIT, usageError } from "../errors.js";
 import { arr, fields, num, obj, str } from "../format.js";
 import { apiCall } from "../http.js";
+import { paginationLine } from "./offline.js";
 
 // ---------------------------------------------------------------- lookup
 
@@ -43,9 +44,14 @@ function renderLookup(body: Record<string, unknown>): string {
         fields([
           ["  URL", str(ep.url)],
           ["  Status", str(ep.endpoint_status)],
+          // The hosted lookup spreads endpointSearchCapability into each endpoint
+          // (pagination, max_record_count, search_note). Only a layer that refuses
+          // pagination gets a row: it changes how the next request must be written.
+          ["  Pagination", paginationLine(ep.pagination, ep.max_record_count)],
           ["  Sample query", str(ep.sample_query)],
         ]),
       );
+      if (ep.pagination === "unsupported" && str(ep.search_note)) lines.push(`  ${ep.search_note}`);
     });
     if (str(county.urbankit_county_page)) lines.push("", `County page: ${county.urbankit_county_page}`);
   }

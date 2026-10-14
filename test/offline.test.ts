@@ -1,8 +1,9 @@
 // Offline commands against the real @urbankitstudio/atlas data. Every call uses
 // the default fetch from helpers.ts, which throws: none of these may touch the network.
-import { atlasIndex } from "@urbankitstudio/atlas";
+import { atlasIndex, findCountyByFips, type CountyRecord, type EndpointRecord } from "@urbankitstudio/atlas";
 import { describe, expect, it } from "vitest";
-import { findCounties } from "../src/commands/offline.js";
+import type { Context } from "../src/context.js";
+import { countyDoc, findCounties, paginationLine, paginationTail, renderCounty } from "../src/commands/offline.js";
 import { uks } from "./helpers.js";
 
 describe("states", () => {
@@ -202,5 +203,66 @@ describe("county", () => {
     expect((await uks(["county", "atlantis", "kane-county"])).code).toBe(2);
     expect((await uks(["county", "illinois"])).code).toBe(2);
     expect((await uks(["county"])).code).toBe(2);
+  });
+
+  it("every endpoint in the bundled data pages today: pagination 'supported', max_record_count null, no Pagination row", async () => {
+    const doc = (await uks(["county", "illinois", "kane-county", "--json"])).json();
+    expect(doc.endpoints[0]).toMatchObject({ pagination: "supported", max_record_count: null });
+    expect(doc.endpoints[0].search_note).not.toContain("refuses resultRecordCount");
+    expect((await uks(["county", "illinois", "kane-county"])).stdout).not.toContain("Pagination:");
+  });
+});
+
+/**
+ * A layer flagged `supportsPagination: false` (the Mississippi statewide layers
+ * from @urbankitstudio/atlas 0.6.30; the bundled data this test runs against may
+ * predate them, so the record is Kane's with the two keys added). The CLI reads
+ * the keys structurally, documents them, and tells the agent how to query.
+ */
+describe("county on a layer that refuses pagination", () => {
+  const ctx = { json: true, quiet: false, apiBase: "https://urbankitstudio.com" } as Context;
+  const kane = findCountyByFips("17089")!;
+  const flag = (ep: EndpointRecord, cap: number | null) => ({ ...ep, supportsPagination: false, maxRecordCount: cap }) as EndpointRecord;
+  const flagged: CountyRecord = { ...kane, endpoints: [flag(kane.endpoints[0]!, 2000)] };
+
+  it("--json documents pagination 'unsupported', the cap, and the hosted search_note tail", () => {
+    const doc = countyDoc(ctx, flagged);
+    const ep = doc.endpoints[0]!;
+    expect(ep.pagination).toBe("unsupported");
+    expect(ep.max_record_count).toBe(2000);
+    expect(ep.attribute_search).toBe("supported"); // the flag is about paging, not about where clauses
+    expect(ep.search_note).toBe(
+      "Typed search is supported on this layer's columns (see searchable_fields); geometry queries are supported too. This describes the layer's query model; status says whether the service is up." +
+        " This layer refuses resultRecordCount and resultOffset (no pagination): send one request without them." +
+        " It returns at most 2,000 rows and sets exceededTransferLimit when more match, so narrow the where clause or the geometry instead of paging." +
+        " Queries other than by FID (the object id) scan the whole layer (1.5 to 20 s); returnDistinctValues and orderByFields are silently ignored, and outStatistics fails.",
+    );
+  });
+
+  it("human output carries a Pagination row and the note, which the paging control does not", () => {
+    const text = renderCounty(countyDoc(ctx, flagged));
+    expect(text).toMatch(/Pagination:\s+none: one request returns at most 2,000 rows; send no resultRecordCount or resultOffset/);
+    expect(text).toContain("  Typed search is supported on this layer's columns");
+    expect(text).toContain("This layer refuses resultRecordCount and resultOffset");
+    expect(renderCounty(countyDoc(ctx, kane))).not.toContain("Pagination:");
+  });
+
+  it("a flagged record without a cap says so instead of inventing a number", () => {
+    const noCap: CountyRecord = { ...kane, endpoints: [flag(kane.endpoints[0]!, null)] };
+    const ep = countyDoc(ctx, noCap).endpoints[0]!;
+    expect(ep.max_record_count).toBeNull();
+    expect(ep.search_note).toContain("It returns at most its declared maximum of rows");
+    expect(paginationLine("unsupported", null)).toBe("none: one request returns at most the layer's cap; send no resultRecordCount or resultOffset");
+    expect(paginationLine("supported", 2000)).toBeUndefined();
+    expect(paginationLine(undefined, undefined)).toBeUndefined();
+  });
+
+  it("only the literal false flags a layer", () => {
+    // Off-type on purpose: atlas 0.6.30 types the key as `false | undefined`, and the reader must
+    // still treat anything else as "pages".
+    expect(paginationTail({ ...kane.endpoints[0]!, supportsPagination: true } as unknown as EndpointRecord)).toBe("");
+    expect(paginationTail({ ...kane.endpoints[0]!, supportsPagination: null } as unknown as EndpointRecord)).toBe("");
+    expect(paginationTail(kane.endpoints[0]!)).toBe("");
+    expect(paginationTail(flag(kane.endpoints[0]!, 2000))).toMatch(/^ This layer refuses/);
   });
 });

@@ -4,6 +4,7 @@ import { fakeFetch, KEY, networkError, uks } from "./helpers.js";
 import {
   ACCOUNT_429,
   LOOKUP_MATCHED,
+  LOOKUP_MATCHED_NOPAGE,
   LOOKUP_NO_GEOCODE,
   LOOKUP_NOT_INDEXED,
   LOOKUP_QUOTA_429,
@@ -44,6 +45,19 @@ describe("lookup", () => {
   it("--json prints the server document", async () => {
     const r = await uks(["lookup", "100 S 3rd St, Geneva, IL", "--json"], { fetch: fakeFetch({ body: LOOKUP_MATCHED }).fetch });
     expect(r.json()).toEqual(LOOKUP_MATCHED);
+  });
+
+  it("a layer that refuses pagination: the human output says so and repeats the server's note; a paging layer gets no row", async () => {
+    const r = await uks(["lookup", "1 Main St, Gulfport, MS"], { fetch: fakeFetch({ body: LOOKUP_MATCHED_NOPAGE }).fetch });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/Pagination:\s+none: one request returns at most 2,000 rows; send no resultRecordCount or resultOffset/);
+    expect(r.stdout).toContain("  Typed search is supported on this layer's columns");
+    expect(r.stdout).toContain("This layer refuses resultRecordCount and resultOffset (no pagination)");
+    const paged = await uks(["lookup", "100 S 3rd St, Geneva, IL"], { fetch: fakeFetch({ body: LOOKUP_MATCHED }).fetch });
+    expect(paged.stdout).not.toContain("Pagination:");
+    // --json is the server document, untouched.
+    const j = await uks(["lookup", "1 Main St, Gulfport, MS", "--json"], { fetch: fakeFetch({ body: LOOKUP_MATCHED_NOPAGE }).fetch });
+    expect(j.json()).toEqual(LOOKUP_MATCHED_NOPAGE);
   });
 
   it("not indexed: exit 0 and the request-county command", async () => {

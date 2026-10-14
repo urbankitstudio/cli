@@ -68,10 +68,16 @@ uks --version
   layer takes attribute search or only spatial queries, and a link into the UrbanKit parcel lookup tool. The
   endpoint `status` is the stamp from when the atlas package was published; `live_status_url` gives the
   current answer. A county that is not in the atlas is a normal answer: `found: false`, exit 0, and the
-  `request-county` command that asks for it.
+  `request-county` command that asks for it. Each endpoint also says whether the layer pages: `pagination`
+  is `"unsupported"` on a layer that refuses `resultRecordCount` and `resultOffset` (the Mississippi
+  statewide layers), with its per-request cap in `max_record_count`. Query such a layer with one request
+  and no paging parameters; it returns at most that many rows and sets `exceededTransferLimit` when more
+  match, so narrow the `where` clause or the geometry instead of asking for a second page. `search_note`
+  spells this out, and the human output adds a `Pagination` row.
 - **lookup** works without a key at the anonymous per-IP limit. With a key, the key's quota applies and each
   call counts one unit. A miss (`matched: false`) or a county the atlas lacks (`atlas_indexed: false`) is a
-  normal answer, exit 0.
+  normal answer, exit 0. Each endpoint in the answer carries the same `pagination`, `max_record_count` and
+  `search_note` as `county`, and the human output prints the `Pagination` row for a layer that refuses it.
 - **request-county** names the county by `--fips 06003`, or by `--state <slug> --county <slug>`. Slugs are
   strict: lowercase `a-z` and `0-9` with single hyphens (`illinois`, `kane-county`). `--email`, `--note`
   and `--source-url` (https only) are optional. The email is used only to tell you when the county ships.

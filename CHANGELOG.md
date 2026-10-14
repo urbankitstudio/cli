@@ -1,5 +1,19 @@
 # @urbankitstudio/cli Changelog
 
+## 0.1.2 (2026-10-13)
+
+- `county` and `find` documents carry `pagination` (`"supported"` or `"unsupported"`) and `max_record_count` per
+  endpoint, read from the atlas record's `supportsPagination` and `maxRecordCount` (published on the two
+  Mississippi statewide layers from `@urbankitstudio/atlas` 0.6.30). On a layer that refuses pagination the
+  `search_note` ends with the same sentences the hosted MCP writes: send one request without
+  `resultRecordCount` or `resultOffset`, read at most `max_record_count` rows, and narrow the query when
+  `exceededTransferLimit` is set, since no page 2 exists.
+- `county` and `lookup` human output print a `Pagination` row and that note for such a layer, and nothing new
+  for a layer that pages.
+- No `uks` command sends an ArcGIS query itself; the documents above are how the CLI honours the flag.
+- The dependency range moves to `^0.6.30`, the atlas release that defines the two keys. They are still read
+  structurally, so older data, where every layer pages, keeps working.
+
 ## 0.1.1 (2026-10-10)
 
 - The `bin` entry is `dist/uks.js` (no leading `./`), the form npm normalizes to, so `npm publish` no longer warns that it auto-corrected `package.json`. The `uks` command was installed either way.

@@ -22,6 +22,7 @@ import type { Context } from "../context.js";
 import { emit, SITE } from "../context.js";
 import { EXIT, usageError } from "../errors.js";
 import { fields, table } from "../format.js";
+import { maxRecordCount, offersPagination, paginationTail } from "../pagination-note.js";
 import { atlasPackageVersion } from "../version.js";
 
 const COUNTY_REQUEST_MESSAGE =
@@ -266,10 +267,23 @@ const SUPPORTED_NOTE =
 const SHARED_SUPPORTED_TAIL =
   " The layer serves several counties: AND scope_where into every where clause, or the results include other counties' parcels.";
 
+// The pagination reader and note live in ../pagination-note.ts, a module with no
+// imports, so the monorepo's root parity test can load them without this
+// package's dependencies.
+export { offersPagination, maxRecordCount, paginationTail };
+
 function searchNote(ep: EndpointRecord): string {
   const shared = !!ep.scopeWhere;
-  if (!offersAttributeSearch(ep)) return UNSUPPORTED_NOTE + (shared ? SHARED_UNSUPPORTED_TAIL : UNSCOPED_UNSUPPORTED_TAIL);
-  return SUPPORTED_NOTE + (shared ? SHARED_SUPPORTED_TAIL : "");
+  const tail = paginationTail(ep);
+  if (!offersAttributeSearch(ep)) return UNSUPPORTED_NOTE + (shared ? SHARED_UNSUPPORTED_TAIL : UNSCOPED_UNSUPPORTED_TAIL) + tail;
+  return SUPPORTED_NOTE + (shared ? SHARED_SUPPORTED_TAIL : "") + tail;
+}
+
+/** The one-line "Pagination" row of the human rendering, for `county` and `lookup` alike. */
+export function paginationLine(pagination: unknown, cap: unknown): string | undefined {
+  if (pagination !== "unsupported") return undefined;
+  const n = typeof cap === "number" ? `${cap.toLocaleString("en-US")} rows` : "the layer's cap";
+  return `none: one request returns at most ${n}; send no resultRecordCount or resultOffset`;
 }
 
 /** The column holding the owner's name, when the layer documents one. */
@@ -297,6 +311,8 @@ function endpointDoc(c: CountyRecord, ep: EndpointRecord, deepLinkBase: string) 
     query_mode: searchable ? "attribute_or_spatial" : "spatial_only",
     scope_where: ep.scopeWhere ?? null,
     sample_query: ep.sampleQuery,
+    pagination: offersPagination(ep) ? "supported" : "unsupported",
+    max_record_count: maxRecordCount(ep),
     search_note: searchNote(ep),
     searchable_fields: searchable ? ep.searchFields.map((f) => f.name) : [],
     fields: ep.searchFields.map((f) => ({ name: f.name, label: f.label })),
@@ -351,7 +367,7 @@ export function countyDoc(ctx: Context, c: CountyRecord) {
   };
 }
 
-function renderCounty(doc: ReturnType<typeof countyDoc>): string {
+export function renderCounty(doc: ReturnType<typeof countyDoc>): string {
   const lines = [
     `${doc.county_name}, ${doc.state_name} (FIPS ${doc.county_fips ?? "unknown"})`,
     `Public REST: ${doc.has_public_rest ? `yes, ${doc.endpoints.length} endpoint${doc.endpoints.length === 1 ? "" : "s"}` : "no"}`,
@@ -366,11 +382,12 @@ function renderCounty(doc: ReturnType<typeof countyDoc>): string {
         ["  Owner field", ep.owner_field ? `${ep.owner_field.name} (${ep.owner_field.label})` : "none documented"],
         ["  Search", ep.query_mode === "spatial_only" ? "spatial only (query by geometry)" : "attribute or spatial"],
         ["  Scope", ep.scope_where ? `${ep.scope_where} (shared layer)` : undefined],
+        ["  Pagination", paginationLine(ep.pagination, ep.max_record_count)],
         ["  Sample query", ep.sample_query ?? undefined],
         ["  Open in UrbanKit", ep.urbankit_lookup_url],
       ]),
     );
-    if (ep.scope_where || ep.query_mode === "spatial_only") lines.push(`  ${ep.search_note}`);
+    if (ep.scope_where || ep.query_mode === "spatial_only" || ep.pagination === "unsupported") lines.push(`  ${ep.search_note}`);
   });
   lines.push("");
   if (doc.owner.why_none) lines.push(`Owner data: ${doc.owner.why_none}`);

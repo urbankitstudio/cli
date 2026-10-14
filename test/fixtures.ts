@@ -210,6 +210,41 @@ export const LOOKUP_MATCHED = {
   rate_limit: { limit: 5, remaining: 4, reset: "2026-10-06T13:00:00.000Z" },
 };
 
+/**
+ * The same match on a county whose layer refuses pagination: the hosted lookup
+ * spreads endpointSearchCapability (api/_lib/search-capability.ts) into each
+ * endpoint, so `pagination`, `max_record_count` and `search_note` travel with it.
+ */
+export const LOOKUP_MATCHED_NOPAGE = {
+  ...LOOKUP_MATCHED,
+  geocode: { lat: 30.4, lon: -89.1, countyName: "Harrison", stateAbbrev: "MS", countyFips: "28047" },
+  county: {
+    state_slug: "mississippi",
+    state_name: "Mississippi",
+    county_name: "Harrison County",
+    county_slug: "harrison-county",
+    county_fips: "28047",
+    has_public_rest: true,
+    endpoints: [
+      {
+        url: "https://gis.mississippi.edu/server/rest/services/Cadastral/MS_MDEQPARCELS_East_2024/MapServer/0",
+        service_type: "MapServer",
+        layer_name: "MS_MDEQPARCELS_East_2024",
+        endpoint_status: "live",
+        sample_query: "https://example.test/query?where=STCNTYFIPS%3D%2728047%27",
+        attribute_search: "supported",
+        query_mode: "attribute_or_spatial",
+        scope_where: "STCNTYFIPS = '28047'",
+        pagination: "unsupported",
+        max_record_count: 2000,
+        search_note:
+          "Typed search is supported on this layer's columns (see searchable_fields); geometry queries are supported too. This describes the layer's query model; status says whether the service is up. The layer serves several counties: AND scope_where into every where clause, or the results include other counties' parcels. This layer refuses resultRecordCount and resultOffset (no pagination): send one request without them. It returns at most 2,000 rows and sets exceededTransferLimit when more match, so narrow the where clause or the geometry instead of paging. Queries other than by FID (the object id) scan the whole layer (1.5 to 20 s); returnDistinctValues and orderByFields are silently ignored, and outStatistics fails.",
+      },
+    ],
+    urbankit_county_page: "https://urbankitstudio.com/parcel-atlas/mississippi/harrison-county",
+  },
+};
+
 export const LOOKUP_NOT_INDEXED = {
   ok: true,
   matched: true,
