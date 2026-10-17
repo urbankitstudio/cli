@@ -8,12 +8,19 @@ import { paginationLine } from "./offline.js";
 
 // ---------------------------------------------------------------- lookup
 
-export async function lookupCommand(ctx: Context, positionals: string[]): Promise<number> {
+// The server's ?op= shape (public/openapi.json). It ignores a malformed one and
+// bills a NEW lookup, so a mistyped --op is refused here instead.
+const OPERATION_ID = /^uklk\|[0-9a-fA-F-]{20,80}$/;
+
+export async function lookupCommand(ctx: Context, positionals: string[], opts: { op?: string } = {}): Promise<number> {
   const address = positionals.join(" ").trim();
   if (address.length < 3) throw usageError('lookup needs a full street address, e.g. uks lookup "1200 Market St, Philadelphia, PA".');
+  if (opts.op !== undefined && !OPERATION_ID.test(opts.op)) {
+    throw usageError("--op takes the operation_id a pay-as-you-go lookup printed (uklk|...), unchanged.");
+  }
   // Keyless works at the anonymous per-IP limit; a key, when there is one, raises it.
   const found = await resolveKey(ctx.deps);
-  const res = await apiCall(ctx, { method: "GET", path: "/api/atlas/lookup", query: { address }, key: found?.key });
+  const res = await apiCall(ctx, { method: "GET", path: "/api/atlas/lookup", query: { address, op: opts.op }, key: found?.key });
   const body = res.body;
   emit(ctx, body, () => renderLookup(body));
   return EXIT.OK;

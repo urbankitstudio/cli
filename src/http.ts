@@ -133,6 +133,18 @@ export function failFor(ctx: Context, res: ApiResponse, req: Pick<ApiRequest, "p
           ? "The key was not accepted. Check it with `uks login --key uk_live_...` or UKS_API_KEY."
           : `This needs an API key: \`uks login --key uk_live_...\` or UKS_API_KEY. Create a key at ${ACCOUNT_URL} (free tier).`
         : (serverMessage ?? `The server refused the request (HTTP ${res.status}).`);
+    // A pay-as-you-go lookup 402 whose billing could not be confirmed names its
+    // operation: the one retry that cannot bill twice carries it, so it is printed
+    // and is a top-level --json field.
+    const operationId = res.status === 402 ? str(res.body.operation_id) : undefined;
+    if (operationId) {
+      throw new CliError(
+        EXIT.REFUSED,
+        serverCode ?? "forbidden",
+        `${message} operation_id: ${operationId}. Retry the same address with --op '${operationId}'.`,
+        { ...base, operation_id: operationId },
+      );
+    }
     throw new CliError(EXIT.REFUSED, serverCode ?? (res.status === 401 ? "unauthorized" : "forbidden"), message, base);
   }
   if (res.status === 503 && serverCode === "rate-limiter-unavailable") {

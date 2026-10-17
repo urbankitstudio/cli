@@ -103,6 +103,54 @@ describe("lookup", () => {
     expect(r.code).toBe(2);
     expect(f.calls).toHaveLength(0);
   });
+
+  const OP = "uklk|0b1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b-0123456789abcdef0123456789abcdef";
+
+  it("--op is sent as ?op=, unchanged, beside the address", async () => {
+    const f = fakeFetch({ body: LOOKUP_MATCHED });
+    const r = await uks(["lookup", "100 S 3rd St, Geneva, IL", "--op", OP], { fetch: f.fetch, env: { UKS_API_KEY: KEY } });
+    expect(r.code).toBe(0);
+    expect(f.calls[0]!.url.searchParams.get("op")).toBe(OP);
+    expect(f.calls[0]!.url.searchParams.get("address")).toBe("100 S 3rd St, Geneva, IL");
+  });
+
+  it("without --op no op parameter is sent", async () => {
+    const f = fakeFetch({ body: LOOKUP_MATCHED });
+    await uks(["lookup", "100 S 3rd St, Geneva, IL"], { fetch: f.fetch });
+    expect(f.calls[0]!.url.searchParams.has("op")).toBe(false);
+  });
+
+  it("an --op that is not an operation id exits 2 without a request (the server would bill it as a new lookup)", async () => {
+    const f = fakeFetch({ body: LOOKUP_MATCHED });
+    for (const bad of ["0b1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b", "uklk|short", ""]) {
+      const r = await uks(["lookup", "100 S 3rd St, Geneva, IL", "--op", bad, "--json"], { fetch: f.fetch });
+      expect(r.code).toBe(2);
+      expect(r.json()).toMatchObject({ error: "bad-arguments" });
+    }
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it("a PAYG 402 with an operation_id prints it and the --op retry; --json carries it top-level", async () => {
+    const message =
+      "We could not confirm whether this lookup was billed, so the result was not returned. Retry the same lookup with operation_id " +
+      `${OP} within 20 hours of the original request; that retry is never billed twice. A retry without it is billed as a new lookup. Send it as the op query parameter.`;
+    const reply = { status: 402, body: { ok: false, error: "usage_not_recorded", message, operation_id: OP }, headers: { "x-uk-operation-id": OP } };
+    const r = await uks(["lookup", "100 S 3rd St, Geneva, IL", "--json"], { fetch: fakeFetch(reply).fetch, env: { UKS_API_KEY: KEY } });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toBe(`uks: ${message} operation_id: ${OP}. Retry the same address with --op '${OP}'.\n`);
+    expect(r.json()).toMatchObject({ ok: false, error: "usage_not_recorded", exit_code: 1, http_status: 402, operation_id: OP });
+  });
+
+  it("a 402 without an operation_id (the uniform denial) prints the server message only", async () => {
+    const message = "We could not record usage for this lookup, so the result was not returned. Please retry.";
+    const r = await uks(["lookup", "100 S 3rd St, Geneva, IL", "--json"], {
+      fetch: fakeFetch({ status: 402, body: { ok: false, error: "usage_not_recorded", message } }).fetch,
+      env: { UKS_API_KEY: KEY },
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toBe(`uks: ${message}\n`);
+    expect(r.json().operation_id).toBeUndefined();
+  });
 });
 
 describe("request-county", () => {

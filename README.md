@@ -34,7 +34,7 @@ node packages/cli/dist/uks.js --help
 | `uks states` | no | no | States the atlas covers, with county and endpoint counts |
 | `uks find <query> [--limit N]` | no | no | Counties by name, name plus state, or FIPS |
 | `uks county <state> <county>` | no | no | One county's endpoint record (also `uks county <FIPS>`) |
-| `uks lookup "<address>"` | yes | optional | Address to county and parcel endpoint |
+| `uks lookup "<address>" [--op ID]` | yes | optional | Address to county and parcel endpoint |
 | `uks request-county ...` | yes | no | Ask for a county the atlas lacks (free) |
 | `uks login --key uk_live_...` | no | no | Save a key |
 | `uks logout` | no | no | Remove the saved key |
@@ -78,6 +78,11 @@ uks --version
   call counts one unit. A miss (`matched: false`) or a county the atlas lacks (`atlas_indexed: false`) is a
   normal answer, exit 0. Each endpoint in the answer carries the same `pagination`, `max_record_count` and
   `search_note` as `county`, and the human output prints the `Pagination` row for a layer that refuses it.
+  On a pay-as-you-go key, a 402 whose billing could not be confirmed prints an `operation_id` (and puts it
+  in the `--json` error document). Retry the same address with `--op '<operation_id>'` within 20 hours of the
+  original request: that retry is never billed twice, and a retry without it is billed as a new lookup. The
+  id is bound to its address: with another address, a chargeable answer is refused and nothing is billed,
+  and an answer that is not chargeable is returned as if no `--op` were sent.
 - **request-county** names the county by `--fips 06003`, or by `--state <slug> --county <slug>`. Slugs are
   strict: lowercase `a-z` and `0-9` with single hyphens (`illinois`, `kane-county`). `--email`, `--note`
   and `--source-url` (https only) are optional. The email is used only to tell you when the county ships.
@@ -141,6 +146,8 @@ The reset time goes to stderr and, with `--json`, into the error document as `re
   stdout and one line on stderr. Branch on `error` and the exit code, never on `message`.
 - Set `UKS_API_KEY` in the environment rather than running `uks login`.
 - Exit 3 means wait until `reset_at`, or upgrade at `upgrade_url` when it is present.
+- A `lookup` error carrying `operation_id` is the one exit 1 worth retrying: repeat the same address with
+  `--op` set to it.
 - Exit 2 from a network failure or a 5xx is worth one retry. Exit 2 with error "bad-arguments" is not. Fix the
   call. Exit 1 is not retryable.
 - `states`, `find` and `county` never touch the network, so they are free and work offline.

@@ -1,5 +1,18 @@
 # @urbankitstudio/cli Changelog
 
+## 0.1.3 (2026-10-14)
+
+- `lookup` takes `--op <operation_id>`, sent as `?op=`. A pay-as-you-go lookup whose billing could not be
+  confirmed answers 402 with an `operation_id`; retrying the same address with it within 20 hours of the
+  original request is never billed twice. The id contains a `|`, so quote it in the shell. A value that is
+  not an operation id is refused locally (exit 2, `bad-arguments`), because the server would ignore it and
+  bill a new lookup.
+- A 402 that carries an `operation_id` prints it, with the `--op` retry, and `--json` puts it in the error
+  document as a top-level `operation_id`. The exit code is unchanged (1).
+- The server binds an operation id to the address it was issued for. With `--op` and a different address,
+  a chargeable answer is refused and nothing is billed, and an answer that is not chargeable is returned as
+  if no `--op` were sent.
+
 ## 0.1.2 (2026-10-13)
 
 - `county` and `find` documents carry `pagination` (`"supported"` or `"unsupported"`) and `max_record_count` per

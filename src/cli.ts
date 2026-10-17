@@ -69,11 +69,11 @@ const COMMANDS: Record<string, Command> = {
   },
   lookup: {
     summary: "Resolve a street address to its county and parcel endpoint",
-    usage: 'uks lookup "<street, city, state>" [--json]',
-    options: [],
+    usage: 'uks lookup "<street, city, state>" [--op <operation_id>] [--json]',
+    options: ["op"],
     details:
-      "Calls GET /api/atlas/lookup. Works without a key at the anonymous per-IP limit; with a key (UKS_API_KEY or `uks login`) the key's quota applies and each call counts one unit. A miss is a normal answer (exit 0).",
-    run: (ctx, p) => lookupCommand(ctx, p),
+      "Calls GET /api/atlas/lookup. Works without a key at the anonymous per-IP limit; with a key (UKS_API_KEY or `uks login`) the key's quota applies and each call counts one unit. A miss is a normal answer (exit 0). Pay-as-you-go: a 402 whose billing could not be confirmed prints an operation_id; retry the SAME address with --op <operation_id> (quote it: it contains a |) within 20 hours of the original request, and that retry is never billed twice.",
+    run: (ctx, p, o) => lookupCommand(ctx, p, { op: s(o.op) }),
   },
   "request-county": {
     summary: "Ask UrbanKit to add a county that is not in the atlas (free)",
@@ -127,6 +127,7 @@ const PARSE_OPTIONS: NonNullable<ParseArgsConfig["options"]> = {
   note: { type: "string" },
   "source-url": { type: "string" },
   key: { type: "string" },
+  op: { type: "string" },
 };
 
 const GLOBAL_HELP = `Global flags:
