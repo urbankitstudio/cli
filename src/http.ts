@@ -79,11 +79,12 @@ function intField(v: unknown): number | null {
 }
 
 /**
- * The fields of a 429 an agent needs to decide when to retry. Three bodies reach
+ * The fields of a 429 an agent needs to decide when to retry. Four bodies reach
  * the CLI: "rate-limited" (the per-IP limiter on /api/v1/me, /api/v1/usage and
  * /api/atlas/request), "rate_limited" (the key's or the anonymous quota on
- * /api/atlas/lookup, the only one carrying upgrade_url) and "request-budget"
- * (the county-request store's daily budget).
+ * /api/atlas/lookup, the only one carrying upgrade_url), "unbilled-limit" (the
+ * account's daily cap on lookups that charged nothing, with its body reset) and
+ * "request-budget" (the county-request store's daily budget).
  */
 export function rateLimitDetails(ctx: Context, res: ApiResponse) {
   const retryAfter = intHeader(res.headers, "retry-after");

@@ -4,6 +4,7 @@ import { atlasIndex, findCountyByFips, type CountyRecord, type EndpointRecord } 
 import { describe, expect, it } from "vitest";
 import type { Context } from "../src/context.js";
 import { countyDoc, findCounties, paginationLine, paginationTail, renderCounty } from "../src/commands/offline.js";
+import { COUNTY_RECHECK_REQUEST_MESSAGE, COUNTY_REQUEST_MESSAGE, NOT_IN_ATLAS_WHY } from "../src/coverage-core.js";
 import { uks } from "./helpers.js";
 
 describe("states", () => {
@@ -84,9 +85,11 @@ describe("find", () => {
     expect(doc.request.body).toEqual({ county_slug: "zzyzxville-county" });
     expect(doc.request.missing).toEqual(["state_slug"]);
     expect(doc.request.command).toBe("uks request-county --state <state-slug> --county zzyzxville-county");
+    // The text says to check the spelling, and with no complete body it names the FIPS route.
+    expect(doc.coverage.message).toContain("Check the spelling first");
+    expect(doc.coverage.message).toContain("`uks request-county --fips <5 digits>`");
     const human = await uks(["find", "Zzyzxville"]);
-    expect(human.stdout).toContain('No county matches "Zzyzxville"');
-    expect(human.stdout).toContain("Request it (free): uks request-county --state <state-slug> --county zzyzxville-county");
+    expect(human.stdout).toContain(`No county matches "Zzyzxville". Try a shorter name, add the state ("Kane IL"), or run \`uks states\`.\n${doc.coverage.message}`);
   });
 
   it("a name miss with a state: a complete request body, matching `county`", async () => {
@@ -95,6 +98,11 @@ describe("find", () => {
     expect(doc.request.body).toEqual({ state_slug: "michigan", county_slug: "zzyzxville-county" });
     expect(doc.request).not.toHaveProperty("missing");
     expect(doc.request.command).toBe("uks request-county --state michigan --county zzyzxville-county");
+    const county = (await uks(["county", "michigan", "Zzyzxville", "--json"])).json();
+    expect(county.request.body).toEqual(doc.request.body);
+    const human = await uks(["find", "Zzyzxville MI"]);
+    expect(human.stdout).toContain("Check the spelling first");
+    expect(human.stdout).toContain("`uks request-county --state michigan --county zzyzxville-county`");
   });
 
   it("an unindexed FIPS: found false and the request hint", async () => {
@@ -103,8 +111,12 @@ describe("find", () => {
     const doc = r.json();
     expect(doc.found).toBe(false);
     expect(doc.results).toEqual([]);
-    expect(doc.request.body).toEqual({ county_fips: "26031" });
+    expect(doc.request.body).toEqual({ county_fips: "26031", state_abbrev: "MI" });
     expect(doc.request.command).toBe("uks request-county --fips 26031");
+    // A FIPS code cannot be misspelled into another county's name: no spelling line.
+    const human = await uks(["find", "26031"]);
+    expect(human.stdout).toContain(doc.coverage.message);
+    expect(human.stdout).not.toContain("Check the spelling");
   });
 
   it("no query exits 2; a bad --limit exits 2", async () => {
@@ -196,7 +208,8 @@ describe("county", () => {
     expect(doc.request.body).toEqual({ state_slug: "michigan", county_slug: "cheboygan-county" });
     expect(doc.request.command).toBe("uks request-county --state michigan --county cheboygan-county");
     const human = await uks(["county", "michigan", "Cheboygan"]);
-    expect(human.stdout).toContain("uks request-county --state michigan --county cheboygan-county");
+    expect(human.stdout).toContain("`uks request-county --state michigan --county cheboygan-county`");
+    expect(human.stdout).toContain(`{"state_slug":"michigan","county_slug":"cheboygan-county"}`);
   });
 
   it("an unknown state or wrong arity exits 2", async () => {
@@ -264,5 +277,87 @@ describe("county on a layer that refuses pagination", () => {
     expect(paginationTail({ ...kane.endpoints[0]!, supportsPagination: null } as unknown as EndpointRecord)).toBe("");
     expect(paginationTail(kane.endpoints[0]!)).toBe("");
     expect(paginationTail(flag(kane.endpoints[0]!, 2000))).toMatch(/^ This layer refuses/);
+  });
+});
+
+/**
+ * A county we do not serve gets the shared coverage block (coverage-core.ts): why,
+ * the county office, the county's own product, and the request, which is the same
+ * object as the top-level `request` and carries the CLI's `command`. The record is
+ * Kane's reshaped, because the bundled data this test runs against may predate the
+ * `coverage` field.
+ */
+describe("coverage for a county we do not serve", () => {
+  const ctx = { json: true, quiet: false, apiBase: "https://urbankitstudio.com" } as Context;
+  const kane = findCountyByFips("17089")!;
+  const sold = {
+    ...kane,
+    hasPublicRest: false,
+    endpoints: [],
+    contact: { department: "GIS Division", url: "https://example.gov/gis", email: null },
+    coverage: {
+      reason: "owner-data-sold",
+      summary: "The county sells parcel data with owner names, so we don't index it.",
+      checked: "2026-10-17",
+      recheck: "2026-10-24",
+      countyProduct: { name: "County Data Hub", url: "https://example.gov/data" },
+    },
+  } as unknown as CountyRecord;
+
+  it("--json: the coverage block, its request equal to the top-level one, and the shared recheck message", () => {
+    const doc = countyDoc(ctx, sold);
+    expect(doc.coverage).toMatchObject({
+      indexed: false,
+      status: "no-public-data",
+      reason: "owner-data-sold",
+      why: "The county sells parcel data with owner names, so we don't index it.",
+      checked: "2026-10-17",
+      recheck: "2026-10-24",
+      county_office: { department: "GIS Division", url: "https://example.gov/gis" },
+      county_product: { name: "County Data Hub", url: "https://example.gov/data" },
+    });
+    expect(doc.request).toBe(doc.coverage!.request);
+    expect(doc.request!.message).toBe(COUNTY_RECHECK_REQUEST_MESSAGE);
+    expect(doc.request!.command).toBe("uks request-county --fips 17089");
+    expect(doc.request!.body).toEqual({ county_fips: "17089", county_name: "Kane", state_abbrev: "IL" });
+  });
+
+  it("human output prints the block's text verbatim: why, the dates, the office, the product and the request line", () => {
+    const doc = countyDoc(ctx, sold);
+    const text = renderCounty(doc);
+    expect(text).toContain(doc.coverage!.message);
+    expect(doc.coverage!.message.split("\n")).toEqual([
+      "The county sells parcel data with owner names, so we don't index it.",
+      "Checked: 2026-10-17",
+      "Next check: 2026-10-24",
+      "County office: GIS Division, https://example.gov/gis",
+      "County product: County Data Hub, https://example.gov/data",
+      "We recheck counties like this one. A request tells us people want it, but it does not promise we will add it.",
+      expect.stringContaining("`uks request-county --fips 17089`"),
+    ]);
+  });
+
+  it("CONTROL: a served county carries no coverage block and prints no request line", () => {
+    const doc = countyDoc(ctx, kane);
+    expect(doc).not.toHaveProperty("coverage");
+    expect(doc).not.toHaveProperty("request");
+    expect(renderCounty(doc)).not.toContain("request-county");
+  });
+
+  it("the bundled no-endpoint county (Hillsborough NH) gets the block too", async () => {
+    const doc = (await uks(["county", "new-hampshire", "hillsborough-county", "--json"])).json();
+    expect(doc.coverage).toMatchObject({ indexed: false, status: "no-public-data" });
+    expect(doc.request).toEqual(doc.coverage.request);
+    expect(doc.request.message).toBe(COUNTY_RECHECK_REQUEST_MESSAGE);
+  });
+
+  it("a miss carries the not-in-atlas block and the shared request message", async () => {
+    const doc = (await uks(["county", "michigan", "cheboygan-county", "--json"])).json();
+    expect(doc.coverage).toMatchObject({ indexed: false, status: "not-in-atlas", reason: null, why: NOT_IN_ATLAS_WHY });
+    expect(doc.request).toEqual(doc.coverage.request);
+    expect(doc.request.message).toBe(COUNTY_REQUEST_MESSAGE);
+    const find = (await uks(["find", "26031", "--json"])).json();
+    expect(find.coverage.status).toBe("not-in-atlas");
+    expect(find.request).toEqual(find.coverage.request);
   });
 });

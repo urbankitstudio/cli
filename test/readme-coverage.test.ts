@@ -50,7 +50,7 @@ describe("README covers the CLI", () => {
     ]);
   });
 
-  it("names the three 429 error strings", () => {
-    for (const code of ["`rate-limited`", "`rate_limited`", "`request-budget`"]) expect(section("## Exit codes")).toContain(code);
+  it("names the four 429 error strings", () => {
+    for (const code of ["`rate-limited`", "`rate_limited`", "`unbilled-limit`", "`request-budget`"]) expect(section("## Exit codes")).toContain(code);
   });
 });

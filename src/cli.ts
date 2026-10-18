@@ -72,7 +72,7 @@ const COMMANDS: Record<string, Command> = {
     usage: 'uks lookup "<street, city, state>" [--op <operation_id>] [--json]',
     options: ["op"],
     details:
-      "Calls GET /api/atlas/lookup. Works without a key at the anonymous per-IP limit; with a key (UKS_API_KEY or `uks login`) the key's quota applies and each call counts one unit. A miss is a normal answer (exit 0). Pay-as-you-go: a 402 whose billing could not be confirmed prints an operation_id; retry the SAME address with --op <operation_id> (quote it: it contains a |) within 20 hours of the original request, and that retry is never billed twice.",
+      "Calls GET /api/atlas/lookup. Works without a key at the anonymous per-IP limit; with a key (UKS_API_KEY or `uks login`) the key's quota applies and each call counts one unit, except a call for a county we do not serve or one that fails on our side, which is credited back. A miss is a normal answer (exit 0). Pay-as-you-go: a 402 whose billing could not be confirmed prints an operation_id; retry the SAME address with --op <operation_id> (quote it: it contains a |) within 20 hours of the original request, and that retry is never billed twice.",
     run: (ctx, p, o) => lookupCommand(ctx, p, { op: s(o.op) }),
   },
   "request-county": {

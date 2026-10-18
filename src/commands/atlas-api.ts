@@ -4,7 +4,7 @@ import { resolveKey } from "../credentials.js";
 import { EXIT, usageError } from "../errors.js";
 import { arr, fields, num, obj, str } from "../format.js";
 import { apiCall } from "../http.js";
-import { paginationLine } from "./offline.js";
+import { coverageText, paginationLine } from "./offline.js";
 
 // ---------------------------------------------------------------- lookup
 
@@ -36,6 +36,12 @@ function renderLookup(body: Record<string, unknown>): string {
   ])];
   if (body.geocode_stale === true) lines.push("The geocoder was unavailable, so this is the last cached geocode for the address.");
   if (body.atlas_indexed === false) {
+    // The coverage block's text, verbatim; an API answer that predates the block keeps the old two lines.
+    const notIndexed = obj(body.coverage);
+    if (notIndexed) {
+      lines.push("", coverageText(notIndexed));
+      return lines.join("\n");
+    }
     lines.push("", str(body.fallback) ?? "This county is not in the UrbanKit atlas yet.");
     const fips = str(obj(obj(body.request)?.body)?.county_fips) ?? str(g.countyFips);
     if (fips) lines.push(`Request it (free): uks request-county --fips ${fips}`);
@@ -63,6 +69,10 @@ function renderLookup(body: Record<string, unknown>): string {
     if (str(county.urbankit_county_page)) lines.push("", `County page: ${county.urbankit_county_page}`);
   }
   if (str(body.message)) lines.push("", String(body.message));
+  // A county in the atlas with nothing we can serve: why, the county's own office
+  // and product, and the request (the same block the not-indexed answer carries).
+  const coverage = obj(body.coverage);
+  if (coverage) lines.push("", coverageText(coverage));
   const rl = obj(body.rate_limit);
   if (rl) lines.push(`Rate limit: ${num(rl.remaining)} of ${num(rl.limit)} left${str(rl.reset) ? `, resets ${rl.reset}` : ""}`);
   return lines.join("\n");

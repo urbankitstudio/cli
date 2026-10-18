@@ -75,9 +75,12 @@ uks --version
   match, so narrow the `where` clause or the geometry instead of asking for a second page. `search_note`
   spells this out, and the human output adds a `Pagination` row.
 - **lookup** works without a key at the anonymous per-IP limit. With a key, the key's quota applies and each
-  call counts one unit. A miss (`matched: false`) or a county the atlas lacks (`atlas_indexed: false`) is a
-  normal answer, exit 0. Each endpoint in the answer carries the same `pagination`, `max_record_count` and
-  `search_note` as `county`, and the human output prints the `Pagination` row for a layer that refuses it.
+  call counts one unit, except a call for a county we do not serve (one the atlas lacks, or one with no public
+  parcel endpoint) and a call that fails on our side (a 5xx answer), whose unit is credited back. A miss (`matched: false`) or a county the atlas lacks
+  (`atlas_indexed: false`) is a normal answer, exit 0. Each endpoint in the answer carries the same `pagination`,
+  `max_record_count` and `search_note` as `county`, and the human output prints the `Pagination` row for a layer
+  that refuses it. For a county we do not serve, the human output prints the answer's `coverage` block: why, the
+  county office, the county's own data product when it sells one, and the `request-county` command.
   On a pay-as-you-go key, a 402 whose billing could not be confirmed prints an `operation_id` (and puts it
   in the `--json` error document). Retry the same address with `--op '<operation_id>'` within 20 hours of the
   original request: that retry is never billed twice, and a retry without it is billed as a new lookup. The
@@ -125,12 +128,13 @@ over plain `http` to anything but a loopback address (`localhost`, `::1`, `127.0
 | 2 | Could not run: bad arguments, a network failure, a request the server rejects (other 4xx), a server error (5xx), an unreadable response |
 | 3 | Rate limit, quota or county-request budget exhausted (429) |
 
-A 429 carries one of three `error` strings:
+A 429 carries one of four `error` strings:
 
 | `error` | From | Meaning |
 |---|---|---|
 | `rate-limited` | `whoami`, `usage`, `request-county` | The per-IP limit (60 per minute on the account routes, 5 per hour for county requests). Not your quota. |
 | `rate_limited` | `lookup` | The key's quota, or the anonymous per-IP limit without a key. |
+| `unbilled-limit` | `lookup` | Your account, all its keys together, made as many lookups today that charged nothing (such as addresses in counties we do not serve) as its cap: 500 on Free, 150 on Starter, 2,000 on Studio, 10,000 on Pro and pay-as-you-go. A charged call never counts, nor does an upstream outage (a 502, 503 or 504; a 500 counts), a pay-as-you-go answer for a served county from a stale cached geocode, or a pay-as-you-go 402 `usage_not_recorded` other than one whose `op` token was minted for another address or another tool. Lookups on the account pause until 00:00 UTC. Not your quota, and not billed. |
 | `request-budget` | `request-county` | The daily budget for county requests is spent. The request was not stored. |
 
 The reset time goes to stderr and, with `--json`, into the error document as `reset_at`,

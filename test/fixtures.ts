@@ -172,6 +172,21 @@ export const LOOKUP_QUOTA_429 = {
   },
 };
 
+/** 429 from /api/atlas/lookup when a free account's uncharged lookups for the UTC day hit its cap (atlas-gate unbilledLimit429). No x-ratelimit-* headers. */
+export const LOOKUP_UNBILLED_429 = {
+  status: 429,
+  body: {
+    ok: false,
+    error: "unbilled-limit",
+    message:
+      "This account has made 500 lookups today that charged nothing, such as addresses in counties we do not serve, so its lookups pause until 00:00 UTC. This refusal is not counted or billed.",
+    limit: 500,
+    remaining: 0,
+    reset: "2026-10-07T00:00:00.000Z",
+  },
+  headers: { "retry-after": "43200" },
+};
+
 /** 429 from /api/atlas/request when the daily storage budget is spent. No x-ratelimit-* headers. */
 export const REQUEST_BUDGET_429 = {
   status: 429,
@@ -257,6 +272,41 @@ export const LOOKUP_NOT_INDEXED = {
     url: "https://urbankitstudio.com/api/atlas/request",
     body: { county_fips: "26031", county_name: "Cheboygan", state_abbrev: "MI" },
     message: "This county is not in the UrbanKit atlas yet.",
+  },
+};
+
+// The hosted lookup's answer for a county in the atlas with no public endpoint
+// (hasPublicRest:false): the county shape with no endpoints, and the coverage block.
+const NO_ENDPOINT_REQUEST = {
+  how: "POST",
+  url: "https://urbankitstudio.com/api/atlas/request",
+  body: { county_fips: "42071", county_name: "Lancaster", state_abbrev: "PA" },
+  message: "We checked this county and it publishes no parcel data we can serve.",
+};
+export const LOOKUP_NO_ENDPOINT = {
+  ok: true,
+  matched: true,
+  geocode: { lat: 40.04, lon: -76.31, countyName: "Lancaster", stateAbbrev: "PA", countyFips: "42071" },
+  geocode_stale: false,
+  atlas_indexed: true,
+  billable: false,
+  county: {
+    county_name: "Lancaster",
+    county_fips: "42071",
+    endpoints: [],
+    urbankit_county_page: "https://urbankitstudio.com/parcel-atlas/pennsylvania/lancaster-county",
+  },
+  message: "Lancaster, PA is in the atlas but has no public parcel REST endpoint, so there's no data to return for this lookup (not billed).",
+  request: NO_ENDPOINT_REQUEST,
+  coverage: {
+    indexed: false,
+    status: "no-public-data",
+    reason: "owner-data-sold",
+    why: "Lancaster County sells parcel data with owner names, so we don't index it.",
+    checked: "2026-10-17",
+    county_office: { department: "GIS Division", url: "https://lancastercountypa.gov/143/GIS-Division" },
+    county_product: { name: "LanCo View PLUS + Data Hub Premium", url: "https://lancastercountypa.gov/2697/LanCo-View-PLUS" },
+    request: NO_ENDPOINT_REQUEST,
   },
 };
 

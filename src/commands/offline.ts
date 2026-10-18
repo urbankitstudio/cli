@@ -20,13 +20,17 @@ import {
 } from "@urbankitstudio/atlas";
 import type { Context } from "../context.js";
 import { emit, SITE } from "../context.js";
+import {
+  coverageAnswer,
+  coverageAnswerText,
+  type CountyRequestHint,
+  type CountyRequestRef,
+  type CoverageAnswer,
+} from "../coverage-core.js";
 import { EXIT, usageError } from "../errors.js";
-import { fields, table } from "../format.js";
+import { fields, obj, str, table } from "../format.js";
 import { maxRecordCount, offersPagination, paginationTail } from "../pagination-note.js";
 import { atlasPackageVersion } from "../version.js";
-
-const COUNTY_REQUEST_MESSAGE =
-  "This county is not in the UrbanKit atlas yet. POST the body above to request it (free), run the uks request-county command shown, or call the request_county MCP tool.";
 
 function dataStamp() {
   return {
@@ -56,20 +60,61 @@ function stateByToken(token: string): StateIndexEntry | undefined {
 const COUNTY_REQUEST_INCOMPLETE_MESSAGE =
   "No county matched, so the request body is incomplete. Fill in the fields named in `missing` (`uks states` lists the state slugs), then POST it to request the county (free), or run the uks request-county command with the placeholders replaced.";
 
-/** The request-county hint for a miss. A name miss with no state yields a body with `missing` fields and placeholders in the command. */
-function requestHint(ctx: Context, body: Record<string, string>) {
-  const missing = body.county_fips ? [] : ["state_slug", "county_slug"].filter((k) => !body[k]);
-  const args = body.county_fips
-    ? `--fips ${body.county_fips}`
-    : `--state ${body.state_slug ?? "<state-slug>"} --county ${body.county_slug ?? "<county-slug>"}`;
-  return {
-    how: "POST",
-    url: `${ctx.apiBase}/api/atlas/request`,
-    body,
-    ...(missing.length ? { missing } : {}),
-    message: missing.length ? COUNTY_REQUEST_INCOMPLETE_MESSAGE : COUNTY_REQUEST_MESSAGE,
-    command: `uks request-county ${args}`,
-  };
+/** The CLI's request: the shared one with `missing` (when the body is incomplete) and the `uks request-county` command. */
+type CliRequestHint = CountyRequestHint & { missing?: string[]; command: string };
+
+/**
+ * The request-county hint for a county we do not serve: the shared one (coverage-core), so the CLI, the API and the
+ * MCP tools send the same body, with the `--api` base in its url and the command added. A miss the shared core cannot
+ * name (a county name with no state) yields a body with `missing` fields and placeholders in the command.
+ */
+function cliRequest(ctx: Context, shared: CountyRequestHint | null, ref: CountyRequestRef): CliRequestHint {
+  const url = `${ctx.apiBase}/api/atlas/request`;
+  if (shared) {
+    const b = shared.body;
+    const args = b.county_fips ? `--fips ${b.county_fips}` : `--state ${b.state_slug} --county ${b.county_slug}`;
+    return { ...shared, url, command: `uks request-county ${args}` };
+  }
+  const body: Record<string, string> = {};
+  const state = stateByToken(ref.state);
+  if (state) body.state_slug = state.slug;
+  if (ref.county?.trim()) body.county_slug = countySlugFromName(ref.county);
+  const missing = ["state_slug", "county_slug"].filter((k) => !body[k]);
+  const args = `--state ${body.state_slug ?? "<state-slug>"} --county ${body.county_slug ?? "<county-slug>"}`;
+  return { how: "POST", url, body, missing, message: COUNTY_REQUEST_INCOMPLETE_MESSAGE, command: `uks request-county ${args}` };
+}
+
+/** The shared coverage answer, with the CLI's request in place of the bare one and its text re-rendered to match. */
+type CliCoverage = Omit<CoverageAnswer, "request"> & { request: CliRequestHint };
+
+function cliCoverage(ctx: Context, record: CountyRecord | undefined, ref: CountyRequestRef): CliCoverage | null {
+  const answer = coverageAnswer(record, ref);
+  if (!answer) return null;
+  const block = { ...answer, request: cliRequest(ctx, answer.request, ref) };
+  return { ...block, message: coverageAnswerText(block) };
+}
+
+/**
+ * A coverage block as text, from the CLI's own or an API answer: its `message`, verbatim. A block from an API that
+ * predates the field gets one line per field instead.
+ */
+export function coverageText(coverage: Record<string, unknown>): string {
+  const message = str(coverage.message);
+  if (message) return message;
+  const office = obj(coverage.county_office);
+  const product = obj(coverage.county_product);
+  const officeText = office ? [str(office.department), str(office.url)].filter(Boolean).join(", ") : "";
+  const productText = product ? [str(product.name), str(product.url)].filter(Boolean).join(", ") : "";
+  const request = obj(coverage.request);
+  const fips = str(obj(request?.body)?.county_fips);
+  const command = str(request?.command) ?? (fips ? `uks request-county --fips ${fips}` : undefined);
+  return fields([
+    ["Why", str(coverage.why)],
+    ["Checked", str(coverage.checked)],
+    ["County office", officeText || undefined],
+    ["County product", productText || undefined],
+    ["Request it (free)", command],
+  ]);
 }
 
 // ---------------------------------------------------------------- states
@@ -212,15 +257,10 @@ export async function findCommand(ctx: Context, positionals: string[], opts: { l
   }
   const { stateFilter, name, hits, total } = findCounties(query, limit);
   const isFips = /^\d{5}$/.test(query);
-  let request: ReturnType<typeof requestHint> | undefined;
+  let coverage: CliCoverage | null = null;
   if (hits.length === 0) {
-    const missBody: Record<string, string> = {};
-    if (isFips) missBody.county_fips = query;
-    else {
-      if (stateFilter) missBody.state_slug = stateFilter.slug;
-      if (name) missBody.county_slug = countySlugFromName(name);
-    }
-    request = requestHint(ctx, missBody);
+    const ref: CountyRequestRef = isFips ? { state: query.slice(0, 2), fips: query } : { state: stateFilter?.slug ?? "", county: name };
+    coverage = cliCoverage(ctx, undefined, ref);
   }
   const doc = {
     ok: true,
@@ -230,14 +270,12 @@ export async function findCommand(ctx: Context, positionals: string[], opts: { l
     state_filter: stateFilter?.slug ?? null,
     total_matches: total,
     results: hits.map(hitDoc),
-    ...(request ? { request } : {}),
+    ...(coverage ? { request: coverage.request, coverage } : {}),
   };
   emit(ctx, doc, () => {
-    if (request) {
-      const miss = isFips
-        ? `No county with FIPS ${query} in the atlas. It may exist but not be indexed yet.`
-        : `No county matches "${query}". Try a shorter name, add the state ("Kane IL"), or run \`uks states\`.`;
-      return `${miss}\nRequest it (free): ${request.command}`;
+    if (coverage) {
+      if (isFips) return coverage.message;
+      return `No county matches "${query}". Try a shorter name, add the state ("Kane IL"), or run \`uks states\`.\n${coverage.message}`;
     }
     const lines = [
       table(
@@ -343,6 +381,8 @@ function ownerSummary(c: CountyRecord) {
 
 export function countyDoc(ctx: Context, c: CountyRecord) {
   const deepLinkBase = `${SITE}/tools/parcel-lookup`;
+  // Present only for a county we do not serve: why, the county office, and the request.
+  const coverage = cliCoverage(ctx, c, { state: c.stateSlug, county: c.county, fips: c.countyFips });
   return {
     ok: true,
     found: true,
@@ -363,6 +403,7 @@ export function countyDoc(ctx: Context, c: CountyRecord) {
     data_vintage: c.dataVintage?.body ?? null,
     urbankit_county_page: `${SITE}/parcel-atlas/${c.stateSlug}/${c.countySlug}`,
     live_status_url: c.countyFips ? `${LIVE_STATUS_URL}?fips=${c.countyFips}` : LIVE_STATUS_URL,
+    ...(coverage ? { request: coverage.request, coverage } : {}),
     county: c,
   };
 }
@@ -390,6 +431,7 @@ export function renderCounty(doc: ReturnType<typeof countyDoc>): string {
     if (ep.scope_where || ep.query_mode === "spatial_only" || ep.pagination === "unsupported") lines.push(`  ${ep.search_note}`);
   });
   lines.push("");
+  if (doc.coverage) lines.push(doc.coverage.message, "");
   if (doc.owner.why_none) lines.push(`Owner data: ${doc.owner.why_none}`);
   if (doc.owner.note && doc.owner.note !== doc.owner.why_none) lines.push(`Owner note: ${doc.owner.note}`);
   if (doc.data_vintage) lines.push(`Data vintage: ${doc.data_vintage}`);
@@ -407,11 +449,13 @@ function resolveState(input: string): StateIndexEntry {
 export async function countyCommand(ctx: Context, positionals: string[]): Promise<number> {
   let record: CountyRecord | undefined;
   let missBody: Record<string, string>;
+  let missRef: CountyRequestRef;
   let missText: string;
   if (positionals.length === 1 && /^\d{5}$/.test(positionals[0]!)) {
     const fips = positionals[0]!;
     record = findCountyByFips(fips);
     missBody = { county_fips: fips };
+    missRef = { state: fips.slice(0, 2), fips };
     missText = `County with FIPS '${fips}' is not in the UrbanKit atlas. The county may exist but not yet be indexed.`;
   } else if (positionals.length === 2) {
     const state = resolveState(positionals[0]!);
@@ -420,15 +464,17 @@ export async function countyCommand(ctx: Context, positionals: string[]): Promis
     const slug = countySlugFromName(raw);
     record = findCounty(state.slug, slugify(raw)) ?? findCounty(state.slug, slug);
     missBody = { state_slug: state.slug, county_slug: slug };
+    missRef = { state: state.slug, county: raw };
     missText = `County '${slug}' not found in '${state.slug}'. Run \`uks find "${raw} ${state.abbrev}"\` for close matches; if it is missing there, it is not indexed yet.`;
   } else {
     throw usageError("Usage: uks county <state> <county>  (or: uks county <5-digit FIPS>)");
   }
 
   if (!record) {
-    const request = requestHint(ctx, missBody);
-    const doc = { ok: true, found: false, ...dataStamp(), ...missBody, message: missText, request };
-    emit(ctx, doc, () => `${missText}\nRequest it (free): ${request.command}`);
+    const coverage = cliCoverage(ctx, undefined, missRef) as CliCoverage;
+    const request = coverage.request;
+    const doc = { ok: true, found: false, ...dataStamp(), ...missBody, message: missText, request, coverage };
+    emit(ctx, doc, () => coverage.message);
     return EXIT.OK;
   }
   const doc = countyDoc(ctx, record);

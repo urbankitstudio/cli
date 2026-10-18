@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { buildCountyRequest } from "../src/commands/atlas-api.js";
+import { coverageAnswer, coverageAnswerText, type CoverageTextInput } from "../src/coverage-core.js";
 import { fakeFetch, KEY, networkError, uks } from "./helpers.js";
 import {
   ACCOUNT_429,
   LOOKUP_MATCHED,
   LOOKUP_MATCHED_NOPAGE,
+  LOOKUP_NO_ENDPOINT,
   LOOKUP_NO_GEOCODE,
   LOOKUP_NOT_INDEXED,
   LOOKUP_QUOTA_429,
+  LOOKUP_UNBILLED_429,
   REQUEST_BUDGET_429,
 } from "./fixtures.js";
 
@@ -67,6 +70,42 @@ describe("lookup", () => {
     expect(r.stdout).toContain("uks request-county --fips 26031");
   });
 
+  it("a county with no public endpoint: why, the county office and product, and the request command", async () => {
+    const r = await uks(["lookup", "50 N Duke St, Lancaster, PA"], { fetch: fakeFetch({ body: LOOKUP_NO_ENDPOINT }).fetch });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/Why:\s+Lancaster County sells parcel data with owner names, so we don't index it\./);
+    expect(r.stdout).toMatch(/Checked:\s+2026-10-17/);
+    expect(r.stdout).toMatch(/County office:\s+GIS Division, https:\/\/lancastercountypa\.gov\/143\/GIS-Division/);
+    expect(r.stdout).toMatch(/County product:\s+LanCo View PLUS \+ Data Hub Premium, https:\/\/lancastercountypa\.gov\/2697\/LanCo-View-PLUS/);
+    expect(r.stdout).toMatch(/Request it \(free\):\s+uks request-county --fips 42071/);
+    const j = await uks(["lookup", "50 N Duke St, Lancaster, PA", "--json"], { fetch: fakeFetch({ body: LOOKUP_NO_ENDPOINT }).fetch });
+    expect(j.json()).toEqual(LOOKUP_NO_ENDPOINT);
+  });
+
+  it("an answer whose coverage block carries its text: the human output prints that text verbatim", async () => {
+    const notIndexed = coverageAnswer(undefined, { state: "MI", county: "Cheboygan", fips: "26031" });
+    const a = await uks(["lookup", "1 Main St, Cheboygan, MI"], {
+      fetch: fakeFetch({ body: { ...LOOKUP_NOT_INDEXED, request: notIndexed.request, coverage: notIndexed } }).fetch,
+    });
+    expect(a.code).toBe(0);
+    expect(a.stdout).toContain(`\n\n${notIndexed.message}`);
+    expect(a.stdout).not.toContain("Request it (free)");
+    const block = LOOKUP_NO_ENDPOINT.coverage as unknown as CoverageTextInput;
+    const message = coverageAnswerText(block);
+    const b = await uks(["lookup", "50 N Duke St, Lancaster, PA"], {
+      fetch: fakeFetch({ body: { ...LOOKUP_NO_ENDPOINT, coverage: { ...LOOKUP_NO_ENDPOINT.coverage, message } } }).fetch,
+    });
+    expect(b.stdout).toContain(`\n\n${message}`);
+    expect(b.stdout).toContain("`uks request-county --fips 42071`");
+    expect(b.stdout).not.toContain("Request it (free)");
+  });
+
+  it("CONTROL: a served county's answer prints no coverage lines", async () => {
+    const r = await uks(["lookup", "100 S 3rd St, Geneva, IL"], { fetch: fakeFetch({ body: LOOKUP_MATCHED }).fetch });
+    expect(r.stdout).not.toMatch(/^Why:/m);
+    expect(r.stdout).not.toContain("Request it (free)");
+  });
+
   it("no geocode match is exit 0, not an error", async () => {
     const r = await uks(["lookup", "not an address"], { fetch: fakeFetch({ body: LOOKUP_NO_GEOCODE }).fetch });
     expect(r.code).toBe(0);
@@ -87,6 +126,16 @@ describe("lookup", () => {
       remaining: 0,
       upgrade_url: "https://urbankitstudio.com/enterprise",
     });
+  });
+
+  it("the uncharged-lookup cap (429 unbilled-limit) exits 3 with the server message and body reset, no upgrade link", async () => {
+    const r = await uks(["lookup", "100 S 3rd St, Geneva, IL", "--json"], { fetch: fakeFetch(LOOKUP_UNBILLED_429).fetch });
+    expect(r.code).toBe(3);
+    expect(r.stderr).toBe(
+      "uks: This account has made 500 lookups today that charged nothing, such as addresses in counties we do not serve, so its lookups pause until 00:00 UTC. This refusal is not counted or billed. Resets at 2026-10-07T00:00:00.000Z.\n",
+    );
+    expect(r.json()).toMatchObject({ error: "unbilled-limit", exit_code: 3, reset_at: "2026-10-07T00:00:00.000Z", retry_after_seconds: 43200, limit: 500, remaining: 0 });
+    expect(r.json()).not.toHaveProperty("upgrade_url");
   });
 
   it("geocoder 504 exits 2", async () => {
