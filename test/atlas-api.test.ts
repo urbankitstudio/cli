@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildCountyRequest } from "../src/commands/atlas-api.js";
 import { coverageAnswer, coverageAnswerText, type CoverageTextInput } from "../src/coverage-core.js";
+import { flagsFor, pausedAnswer } from "../src/access-core.js";
 import { fakeFetch, KEY, networkError, uks } from "./helpers.js";
 import {
   ACCOUNT_429,
@@ -9,6 +10,7 @@ import {
   LOOKUP_NO_ENDPOINT,
   LOOKUP_NO_GEOCODE,
   LOOKUP_NOT_INDEXED,
+  LOOKUP_PAUSED,
   LOOKUP_QUOTA_429,
   LOOKUP_UNBILLED_429,
   REQUEST_BUDGET_429,
@@ -98,6 +100,40 @@ describe("lookup", () => {
     expect(b.stdout).toContain(`\n\n${message}`);
     expect(b.stdout).toContain("`uks request-county --fips 42071`");
     expect(b.stdout).not.toContain("Request it (free)");
+  });
+
+  it("a paused county: what is paused, why, the terms, the free page; not the not-served rows", async () => {
+    const r = await uks(["lookup", "1 N High St, West Chester, PA"], { fetch: fakeFetch({ body: LOOKUP_PAUSED }).fetch });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/Paused:\s+paid lookups and owner lists/);
+    expect(r.stdout).toMatch(/Surfaces:\s+paid_lookup, paid_enrich, paid_bulk, paid_lists/);
+    expect(r.stdout).toMatch(/Why:\s+Chester County publishes its parcel layer under a noncommercial licence \(CC BY-NC-SA\)\./);
+    expect(r.stdout).toMatch(/Terms:\s+https:\/\/www\.arcgis\.com\/sharing\/rest\/content\/items\/743f6f125f1e41589c0c9841d65a0ade\?f=json/);
+    expect(r.stdout).toMatch(/Since:\s+2026-10-17/);
+    expect(r.stdout).toMatch(/County office:\s+Chester County GIS, https:\/\/example\.gov\/gis/);
+    expect(r.stdout).toMatch(/County page \(free\):\s+https:\/\/urbankitstudio\.com\/parcel-atlas\/pennsylvania\/chester-county/);
+    expect(r.stdout).not.toContain("Request it (free)");
+    expect(r.stdout).not.toMatch(/^Checked:/m);
+    const j = await uks(["lookup", "1 N High St, West Chester, PA", "--json"], { fetch: fakeFetch({ body: LOOKUP_PAUSED }).fetch });
+    expect(j.json()).toEqual(LOOKUP_PAUSED);
+  });
+
+  it("the paused fixture is the shape the core builds", () => {
+    const { coverage } = LOOKUP_PAUSED;
+    expect(
+      pausedAnswer(
+        { county_fips: "42029", flags: flagsFor("paid-off"), reason: "licence-terms", why: coverage.why, citation_url: coverage.citation_url, since: coverage.since },
+        { contact: coverage.county_office },
+        { state_slug: "pennsylvania", county_slug: "chester-county" },
+      ),
+    ).toEqual(coverage);
+  });
+
+  it("a custom set prints its surfaces under a plain Paused line", async () => {
+    const coverage = { ...LOOKUP_PAUSED.coverage, preset: "custom", paused: ["paid_enrich", "free_discovery"] };
+    const r = await uks(["lookup", "1 N High St, West Chester, PA"], { fetch: fakeFetch({ body: { ...LOOKUP_PAUSED, coverage } }).fetch });
+    expect(r.stdout).toMatch(/Paused:\s+some surfaces/);
+    expect(r.stdout).toMatch(/Surfaces:\s+paid_enrich, free_discovery/);
   });
 
   it("CONTROL: a served county's answer prints no coverage lines", async () => {

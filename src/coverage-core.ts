@@ -162,13 +162,17 @@ export function stateSlugFromAbbrev(input: string): string | null {
  * that carries its unit ("Orleans Parish") is slugged as it stands, any other
  * gets " County", so "Kane" and "kane-county" both give "kane-county", the
  * slug the request endpoint resolves to a FIPS code. The unit is also read
- * across hyphens, so a slug ("bethel-census-area") stays as it is.
+ * across hyphens, so a slug ("bethel-census-area") stays as it is. An
+ * apostrophe (', U+2019, U+02BC) is dropped, as there: "Prince George's" gives
+ * "prince-georges-county".
  */
 const COUNTY_UNIT_SUFFIX =
   /\b(?:County|Parish|Borough|Municipality|Census Area|City|Statewide|Planning Region|District of Columbia)$/i;
 
+const APOSTROPHES = /['\u2019\u02bc]/g;
+
 function requestCountySlug(county: string): string {
-  const name = county.trim();
+  const name = county.replace(APOSTROPHES, "").trim();
   if (!canonicalRequestSlug(name)) return "";
   const hasUnit = COUNTY_UNIT_SUFFIX.test(name) || COUNTY_UNIT_SUFFIX.test(name.replace(/[-_]+/g, " "));
   return canonicalRequestSlug(hasUnit ? name : `${name} County`);

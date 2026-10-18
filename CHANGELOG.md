@@ -1,5 +1,17 @@
 # @urbankitstudio/cli Changelog
 
+## 0.1.5 (2026-10-18)
+
+- `lookup` for a county that is paused (its terms or a law forbid paid use) prints the hosted answer's paused
+  `coverage` block: what is paused (the preset, and the `Surfaces` by name), `Why`, `Terms` (the citation), `Since`, the county office and the free county
+  page. `--json` passes the block through unchanged (`status: "paused"`, `preset`, `paused`, `reason`, `why`,
+  `citation_url`, `since`, `county_office`, `free_alternatives`, `request: null`). A paused lookup is not billed.
+- `src/access-core.ts` is a copy of `@urbankitstudio/atlas`'s paused-answer core (0.6.39), written by the monorepo's
+  sync, until the dependency floor reaches the release that exports it. Offline commands are unchanged: which
+  counties are paused is live data from the hosted API.
+- `src/coverage-core.ts` (the synced copy of the atlas coverage core) drops an apostrophe from a county name in the
+  `request` hint, as `@urbankitstudio/atlas` 0.6.39 does: `Prince George's` gives `prince-georges-county`.
+
 ## 0.1.4 (2026-10-17)
 
 - `county` and `find` documents for a county we do not serve carry a `coverage` block: `status`

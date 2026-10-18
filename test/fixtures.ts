@@ -310,6 +310,36 @@ export const LOOKUP_NO_ENDPOINT = {
   },
 };
 
+/** A county paused for paid calls: served, not billed, with the paused block. */
+export const LOOKUP_PAUSED = {
+  ok: true,
+  matched: true,
+  geocode: { lat: 39.95, lon: -75.6, countyName: "Chester", stateAbbrev: "PA", countyFips: "42029" },
+  geocode_stale: false,
+  atlas_indexed: true,
+  billable: false,
+  county: {
+    county_name: "Chester",
+    county_fips: "42029",
+    endpoints: [],
+    urbankit_county_page: "https://urbankitstudio.com/parcel-atlas/pennsylvania/chester-county",
+  },
+  message: "Chester, PA is paused, so this lookup was not billed. Chester County publishes its parcel layer under a noncommercial licence (CC BY-NC-SA).",
+  coverage: {
+    indexed: true,
+    status: "paused",
+    preset: "paid-off",
+    paused: ["paid_lookup", "paid_enrich", "paid_bulk", "paid_lists"],
+    reason: "licence-terms",
+    why: "Chester County publishes its parcel layer under a noncommercial licence (CC BY-NC-SA).",
+    citation_url: "https://www.arcgis.com/sharing/rest/content/items/743f6f125f1e41589c0c9841d65a0ade?f=json",
+    since: "2026-10-17",
+    county_office: { department: "Chester County GIS", url: "https://example.gov/gis" },
+    free_alternatives: { county_page: "https://urbankitstudio.com/parcel-atlas/pennsylvania/chester-county" },
+    request: null,
+  },
+};
+
 export const LOOKUP_NO_GEOCODE = {
   ok: true,
   query: { address: "not an address" },

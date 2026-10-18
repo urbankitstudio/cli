@@ -80,7 +80,9 @@ uks --version
   (`atlas_indexed: false`) is a normal answer, exit 0. Each endpoint in the answer carries the same `pagination`,
   `max_record_count` and `search_note` as `county`, and the human output prints the `Pagination` row for a layer
   that refuses it. For a county we do not serve, the human output prints the answer's `coverage` block: why, the
-  county office, the county's own data product when it sells one, and the `request-county` command.
+  county office, the county's own data product when it sells one, and the `request-county` command. For a county
+  that is paused (its terms or a law forbid paid use), the call is not billed and the human output prints what is
+  paused, why, the terms it rests on, since when, the county office and the free county page.
   On a pay-as-you-go key, a 402 whose billing could not be confirmed prints an `operation_id` (and puts it
   in the `--json` error document). Retry the same address with `--op '<operation_id>'` within 20 hours of the
   original request: that retry is never billed twice, and a retry without it is billed as a new lookup. The

@@ -5,6 +5,7 @@ import { EXIT, usageError } from "../errors.js";
 import { arr, fields, num, obj, str } from "../format.js";
 import { apiCall } from "../http.js";
 import { coverageText, paginationLine } from "./offline.js";
+import type { CountyPausedAnswer } from "../access-core.js";
 
 // ---------------------------------------------------------------- lookup
 
@@ -71,11 +72,40 @@ function renderLookup(body: Record<string, unknown>): string {
   if (str(body.message)) lines.push("", String(body.message));
   // A county in the atlas with nothing we can serve: why, the county's own office
   // and product, and the request (the same block the not-indexed answer carries).
+  // A paused county (status "paused") gets its own rows: why, the terms it rests
+  // on and the free county page; any other coverage block is a county we do
+  // not serve.
   const coverage = obj(body.coverage);
-  if (coverage) lines.push("", coverageText(coverage));
+  if (coverage) lines.push("", ...(coverage.status === "paused" ? pausedLines(coverage) : [coverageText(coverage)]));
   const rl = obj(body.rate_limit);
   if (rl) lines.push(`Rate limit: ${num(rl.remaining)} of ${num(rl.limit)} left${str(rl.reset) ? `, resets ${rl.reset}` : ""}`);
   return lines.join("\n");
+}
+
+const PRESET_TEXT: Record<CountyPausedAnswer["preset"], string> = {
+  "paid-off": "paid lookups and owner lists",
+  "paid-lists-off": "paid owner lists (single-parcel lookups still work)",
+  "all-off": "everything, free use included",
+  custom: "some surfaces",
+};
+
+/** The rows for a paused county's coverage block (the hosted API's pausedAnswer). */
+export function pausedLines(coverage: Record<string, unknown>): string[] {
+  const office = obj(coverage.county_office);
+  const officeText = office ? [str(office.department), str(office.url)].filter(Boolean).join(", ") : "";
+  const preset = str(coverage.preset) as CountyPausedAnswer["preset"] | undefined;
+  const surfaces = Array.isArray(coverage.paused) ? coverage.paused.filter((s): s is string => typeof s === "string") : [];
+  return [
+    fields([
+      ["Paused", (preset && PRESET_TEXT[preset]) ?? undefined],
+      ["Surfaces", surfaces.length ? surfaces.join(", ") : undefined],
+      ["Why", str(coverage.why)],
+      ["Terms", str(coverage.citation_url)],
+      ["Since", str(coverage.since)],
+      ["County office", officeText || undefined],
+      ["County page (free)", str(obj(coverage.free_alternatives)?.county_page)],
+    ]),
+  ];
 }
 
 // ---------------------------------------------------------------- request-county
