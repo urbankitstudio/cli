@@ -5,7 +5,7 @@ import { EXIT, usageError } from "../errors.js";
 import { arr, fields, num, obj, str } from "../format.js";
 import { apiCall } from "../http.js";
 import { coverageText, paginationLine } from "./offline.js";
-import type { CountyPausedAnswer } from "../access-core.js";
+import { countyDownMessage, type CountyPausedAnswer } from "../access-core.js";
 
 // ---------------------------------------------------------------- lookup
 
@@ -76,7 +76,7 @@ function renderLookup(body: Record<string, unknown>): string {
   // on and the free county page; any other coverage block is a county we do
   // not serve.
   const coverage = obj(body.coverage);
-  if (coverage) lines.push("", ...(coverage.status === "paused" ? pausedLines(coverage) : [coverageText(coverage)]));
+  if (coverage) lines.push("", ...(coverage.status === "paused" ? pausedLines(coverage, str(g.countyName)) : [coverageText(coverage)]));
   const rl = obj(body.rate_limit);
   if (rl) lines.push(`Rate limit: ${num(rl.remaining)} of ${num(rl.limit)} left${str(rl.reset) ? `, resets ${rl.reset}` : ""}`);
   return lines.join("\n");
@@ -89,18 +89,25 @@ const PRESET_TEXT: Record<CountyPausedAnswer["preset"], string> = {
   custom: "some surfaces",
 };
 
-/** The rows for a paused county's coverage block (the hosted API's pausedAnswer). */
-export function pausedLines(coverage: Record<string, unknown>): string[] {
+/**
+ * The rows for a paused county's coverage block (the hosted API's pausedAnswer).
+ * A county paused because its own server is down (reason "upstream-broken")
+ * reads as down, not as a pause: the one sentence first, and no Terms row,
+ * since no terms bear on it.
+ */
+export function pausedLines(coverage: Record<string, unknown>, countyName?: string | null): string[] {
   const office = obj(coverage.county_office);
   const officeText = office ? [str(office.department), str(office.url)].filter(Boolean).join(", ") : "";
   const preset = str(coverage.preset) as CountyPausedAnswer["preset"] | undefined;
   const surfaces = Array.isArray(coverage.paused) ? coverage.paused.filter((s): s is string => typeof s === "string") : [];
+  const down = coverage.reason === "upstream-broken";
   return [
+    ...(down ? [countyDownMessage(countyName ?? null), ""] : []),
     fields([
       ["Paused", (preset && PRESET_TEXT[preset]) ?? undefined],
       ["Surfaces", surfaces.length ? surfaces.join(", ") : undefined],
       ["Why", str(coverage.why)],
-      ["Terms", str(coverage.citation_url)],
+      ["Terms", down ? undefined : str(coverage.citation_url)],
       ["Since", str(coverage.since)],
       ["County office", officeText || undefined],
       ["County page (free)", str(obj(coverage.free_alternatives)?.county_page)],

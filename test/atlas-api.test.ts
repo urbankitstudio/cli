@@ -129,6 +129,23 @@ describe("lookup", () => {
     ).toEqual(coverage);
   });
 
+  it("a county paused because its own server is down (upstream-broken) reads as down: the sentence first, no Terms row", async () => {
+    const DOWN =
+      "Chester's GIS server is down on the county's end, so its parcel data can't be reached right now. Try again later, or use the county office's own site.";
+    const coverage = { ...LOOKUP_PAUSED.coverage, reason: "upstream-broken", why: "The county's server has not answered since 2026-10-18." };
+    const body = { ...LOOKUP_PAUSED, coverage, message: `${DOWN} This lookup was not billed. ${coverage.why}` };
+    const r = await uks(["lookup", "1 N High St, West Chester, PA"], { fetch: fakeFetch({ body }).fetch });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(DOWN);
+    expect(r.stdout).toMatch(/Paused:\s+paid lookups and owner lists/);
+    expect(r.stdout).toMatch(/Why:\s+The county's server has not answered since 2026-10-18\./);
+    expect(r.stdout).not.toMatch(/^Terms:/m);
+    expect(r.stdout).toMatch(/County office:\s+Chester County GIS, https:\/\/example\.gov\/gis/);
+    expect(r.stdout).toMatch(/County page \(free\):\s+https:\/\/urbankitstudio\.com\/parcel-atlas\/pennsylvania\/chester-county/);
+    const j = await uks(["lookup", "1 N High St, West Chester, PA", "--json"], { fetch: fakeFetch({ body }).fetch });
+    expect(j.json()).toEqual(body);
+  });
+
   it("a custom set prints its surfaces under a plain Paused line", async () => {
     const coverage = { ...LOOKUP_PAUSED.coverage, preset: "custom", paused: ["paid_enrich", "free_discovery"] };
     const r = await uks(["lookup", "1 N High St, West Chester, PA"], { fetch: fakeFetch({ body: { ...LOOKUP_PAUSED, coverage } }).fetch });

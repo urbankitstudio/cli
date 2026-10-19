@@ -270,6 +270,28 @@ export interface CoverageRecordLike extends EndpointPresenceLike {
   coverage?: CountyCoverage | null;
 }
 
+/**
+ * Does the record's own retirement explain the county better than a pause
+ * would? True for a record with no endpoint whose coverage reason is anything
+ * but "licence-restricted": the county published nothing we can serve (it sold
+ * its data, made the layer private, ...), so the honest answer is the coverage
+ * block with the record's summary, whatever the access switch says about the
+ * county. A "licence-restricted" record keeps the paused answer: its endpoint
+ * was withheld under the county's terms, which is the pause's own story. A
+ * record WITH an endpoint never qualifies, so a paused county whose endpoint
+ * comes back is paused again with no edit; nor does a contradictory record
+ * (hasPublicRest false beside a non-empty endpoints array: validate-atlas
+ * rejects the shape, so this is defensive), because an override would drop even
+ * an all-off pause and discovery would serve the endpoints the record lists.
+ * (Leo, 2026-10-18.)
+ */
+export function coverageOverridesPause(record: CoverageRecordLike | null | undefined): boolean {
+  if (!record || countyHasEndpoint(record)) return false;
+  if (Array.isArray(record.endpoints) && record.endpoints.length > 0) return false;
+  const reason = record.coverage ? record.coverage.reason : null;
+  return !!reason && reason !== "licence-restricted";
+}
+
 /** `why` for a county the atlas has no record for. */
 export const NOT_IN_ATLAS_WHY = "This county is not in the UrbanKit atlas.";
 

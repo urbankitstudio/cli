@@ -1,12 +1,14 @@
 /**
  * The "this county is paused" answer, as @urbankitstudio/atlas gives it: the
- * flags, the presets, the reasons, accessBlocks() and pausedAnswer().
+ * flags, the presets, the reasons, accessBlocks() and pausedAnswer(), and the
+ * "this county's server is down" sentence, countyDownMessage().
  *
  * Everything between the CORE-COPY markers is a verbatim copy of the package's
  * src/access.ts, written by the monorepo's scripts/sync-coverage-core.mjs and
- * held equal by its coverage-core-parity test. The package exports these from
- * 0.6.39; this CLI's range also accepts older data, so it carries the copy
- * rather than an import until its floor moves. No imports, so the root test can
+ * held equal by its coverage-core-parity test. The package exports the paused
+ * answer from 0.6.39 and countyDownMessage() from 0.6.40; this CLI's range also
+ * accepts older data, so it carries the copy rather than an import until its
+ * floor moves. No imports, so the root test can
  * load this module without this package's dependencies.
  */
 
@@ -340,6 +342,21 @@ export function pausedAnswer(
     free_alternatives: pageUrl ? { county_page: pageUrl } : null,
     request: null,
   };
+}
+
+/**
+ * The one sentence every surface gives for a county whose own GIS server is
+ * down: the liveness probe observed `down`, the operator paused it with reason
+ * `upstream-broken`, or a county query failed on the county's side
+ * (`county-unavailable`). It names the county's end, not ours, and says nothing
+ * about money: whether a call was charged is that call's fact, so each surface
+ * appends its own conditional charge clause (the enrichment-billing.ts rule).
+ * `countyName` is the name as that surface shows it ("Fulton", "Kane County");
+ * unknown, the sentence says "The county's".
+ */
+export function countyDownMessage(countyName: string | null | undefined): string {
+  const whose = countyName ? `${countyName}'s` : "The county's";
+  return `${whose} GIS server is down on the county's end, so its parcel data can't be reached right now. Try again later, or use the county office's own site.`;
 }
 
 // CORE-COPY-END

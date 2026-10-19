@@ -1,5 +1,15 @@
 # @urbankitstudio/cli Changelog
 
+## 0.1.6 (2026-10-18)
+
+- `lookup` for a county paused because its own GIS server is down (the hosted answer's paused `coverage` block with
+  reason `upstream-broken`) reads as down, not as a pause: the one sentence `@urbankitstudio/atlas` 0.6.40 exports as
+  `countyDownMessage()` ("Chester's GIS server is down on the county's end, so its parcel data can't be reached right
+  now. Try again later, or use the county office's own site.") prints first, and the `Terms` row is left out, since no
+  terms bear on it. The other rows (`Paused`, `Surfaces`, `Why`, `Since`, `County office`, `County page (free)`) and
+  `--json` are unchanged.
+- `src/access-core.ts` (the synced copy of the atlas access core) carries `countyDownMessage()` from 0.6.40.
+
 ## 0.1.5 (2026-10-18)
 
 - `lookup` for a county that is paused (its terms or a law forbid paid use) prints the hosted answer's paused
