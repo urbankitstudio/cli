@@ -1,5 +1,12 @@
 # @urbankitstudio/cli Changelog
 
+## 0.1.7 (2026-10-18)
+
+- `request-county` for a county the atlas already serves prints `<County>, <ST> is already in the atlas:
+  <page url>.` and `No request was stored.`, exit 0, instead of "accepted". `POST /api/atlas/request` now
+  answers such a county with a 200 `{status: "already_indexed", county_name, state_abbrev, page_url}` and
+  stores nothing; `--json` passes that object through unchanged.
+
 ## 0.1.6 (2026-10-18)
 
 - `lookup` for a county paused because its own GIS server is down (the hosted answer's paused `coverage` block with

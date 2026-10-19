@@ -177,6 +177,11 @@ export async function requestCountyCommand(ctx: Context, opts: RequestCountyOpti
   const out = res.body;
   emit(ctx, out, () => {
     const what = body.county_fips ? `FIPS ${body.county_fips}` : `${body.county_slug} in ${body.state_slug}`;
+    // A county the atlas already serves: a 200 with its page, and nothing stored.
+    if (out.status === "already_indexed") {
+      const name = [str(out.county_name), str(out.state_abbrev)].filter(Boolean).join(", ") || what;
+      return [`${name} is already in the atlas${str(out.page_url) ? `: ${out.page_url}` : ""}.`, "No request was stored."].join("\n");
+    }
     return [
       `Request for ${what} accepted${str(out.id) ? ` (id ${out.id})` : ""}.`,
       "Repeating this request within 24 hours returns the same id.",

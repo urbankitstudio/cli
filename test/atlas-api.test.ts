@@ -279,6 +279,24 @@ describe("request-county", () => {
     expect(r.stdout).not.toContain("decide which counties");
   });
 
+  it("a county already in the atlas (200 already_indexed): says so with its page, exit 0, never 'accepted'", async () => {
+    const answer = {
+      status: "already_indexed",
+      county_name: "Kane County",
+      state_abbrev: "IL",
+      page_url: "https://urbankitstudio.com/parcel-atlas/illinois/kane-county",
+    };
+    const f = fakeFetch({ status: 200, body: answer });
+    const r = await uks(["request-county", "--fips", "17089"], { fetch: f.fetch });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe(
+      "Kane County, IL is already in the atlas: https://urbankitstudio.com/parcel-atlas/illinois/kane-county.\nNo request was stored.\n",
+    );
+    expect(r.stdout).not.toContain("accepted");
+    const j = await uks(["request-county", "--fips", "17089", "--json"], { fetch: fakeFetch({ status: 200, body: answer }).fetch });
+    expect(j.json()).toEqual(answer);
+  });
+
   it("by slugs", async () => {
     const f = fakeFetch({ status: 202, body: { accepted: true, id: "x" } });
     const r = await uks(["request-county", "--state", "michigan", "--county", "cheboygan-county", "--json"], { fetch: f.fetch });
