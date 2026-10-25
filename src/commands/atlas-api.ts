@@ -67,6 +67,8 @@ function renderLookup(body: Record<string, unknown>): string {
       );
       if (ep.pagination === "unsupported" && str(ep.search_note)) lines.push(`  ${ep.search_note}`);
     });
+    // The publisher's required statement for those endpoints' data, verbatim.
+    if (str(county.credit)) lines.push("", `Data credit: ${county.credit}`);
     if (str(county.urbankit_county_page)) lines.push("", `County page: ${county.urbankit_county_page}`);
   }
   if (str(body.message)) lines.push("", String(body.message));
@@ -97,7 +99,7 @@ const PRESET_TEXT: Record<CountyPausedAnswer["preset"], string> = {
  */
 export function pausedLines(coverage: Record<string, unknown>, countyName?: string | null): string[] {
   const office = obj(coverage.county_office);
-  const officeText = office ? [str(office.department), str(office.url)].filter(Boolean).join(", ") : "";
+  const officeText = office ? [str(office.department), str(office.url), str(office.email)].filter(Boolean).join(", ") : "";
   const preset = str(coverage.preset) as CountyPausedAnswer["preset"] | undefined;
   const surfaces = Array.isArray(coverage.paused) ? coverage.paused.filter((s): s is string => typeof s === "string") : [];
   const down = coverage.reason === "upstream-broken";

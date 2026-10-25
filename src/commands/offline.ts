@@ -103,7 +103,7 @@ export function coverageText(coverage: Record<string, unknown>): string {
   if (message) return message;
   const office = obj(coverage.county_office);
   const product = obj(coverage.county_product);
-  const officeText = office ? [str(office.department), str(office.url)].filter(Boolean).join(", ") : "";
+  const officeText = office ? [str(office.department), str(office.url), str(office.email)].filter(Boolean).join(", ") : "";
   const productText = product ? [str(product.name), str(product.url)].filter(Boolean).join(", ") : "";
   const request = obj(coverage.request);
   const fips = str(obj(request?.body)?.county_fips);
@@ -379,6 +379,16 @@ function ownerSummary(c: CountyRecord) {
   };
 }
 
+/**
+ * The publisher's required statement on the record, verbatim, or null. The
+ * field arrives with @urbankitstudio/atlas 0.6.42 (which `^0.6.30` resolves to),
+ * so it is read without the older package's type.
+ */
+function recordCredit(c: CountyRecord): string | null {
+  const credit = (c as { credit?: unknown }).credit;
+  return typeof credit === "string" && credit ? credit : null;
+}
+
 export function countyDoc(ctx: Context, c: CountyRecord) {
   const deepLinkBase = `${SITE}/tools/parcel-lookup`;
   // Present only for a county we do not serve: why, the county office, and the request.
@@ -399,6 +409,7 @@ export function countyDoc(ctx: Context, c: CountyRecord) {
     endpoints: c.endpoints.map((ep) => endpointDoc(c, ep, deepLinkBase)),
     contact: c.contact,
     notes: c.notes,
+    credit: recordCredit(c),
     added_at: c.addedAt ?? null,
     data_vintage: c.dataVintage?.body ?? null,
     urbankit_county_page: `${SITE}/parcel-atlas/${c.stateSlug}/${c.countySlug}`,
@@ -436,6 +447,7 @@ export function renderCounty(doc: ReturnType<typeof countyDoc>): string {
   if (doc.owner.note && doc.owner.note !== doc.owner.why_none) lines.push(`Owner note: ${doc.owner.note}`);
   if (doc.data_vintage) lines.push(`Data vintage: ${doc.data_vintage}`);
   if (doc.notes) lines.push(`Notes: ${doc.notes}`);
+  if (doc.credit) lines.push(`Data credit: ${doc.credit}`);
   lines.push(`County page: ${doc.urbankit_county_page}`);
   return lines.join("\n");
 }

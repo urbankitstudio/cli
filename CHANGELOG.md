@@ -1,5 +1,19 @@
 # @urbankitstudio/cli Changelog
 
+## 0.1.8 (2026-10-20)
+
+- `lookup` and `county`: the `County office` row prints the office's email after its url when the answer carries
+  one (`county_office.email`, which `@urbankitstudio/atlas` 0.6.42 adds to the paused and coverage answers from
+  the record's `contact.email`); a null email prints nothing after the url, as before. `--json` passes the field
+  through unchanged.
+- `src/access-core.ts` and `src/coverage-core.ts` (the synced copies of the atlas cores) carry
+  `county_office.email` from 0.6.42.
+- `lookup` and `county`: a county whose record carries `credit` (the publisher's required statement,
+  `@urbankitstudio/atlas` 0.6.42) prints it verbatim as `Data credit: ...`, after the endpoints (`lookup`, from
+  the hosted answer's `county.credit`) or after the notes (`county`, from the bundled record). `--json` carries
+  it as `county.credit` (`lookup`, passed through) and `credit` (`county`, null when the record names none).
+- Metadata only. The package author and the license holder now name UrbanKit Studio LLC.
+
 ## 0.1.7 (2026-10-18)
 
 - `request-county` for a county the atlas already serves prints `<County>, <ST> is already in the atlas:

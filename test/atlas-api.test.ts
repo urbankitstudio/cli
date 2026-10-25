@@ -118,6 +118,15 @@ describe("lookup", () => {
     expect(j.json()).toEqual(LOOKUP_PAUSED);
   });
 
+  it("the county office's email, when the answer carries one, prints on the County office row", async () => {
+    const coverage = { ...LOOKUP_PAUSED.coverage, county_office: { ...LOOKUP_PAUSED.coverage.county_office, email: "gis@example.gov" } };
+    const r = await uks(["lookup", "1 N High St, West Chester, PA"], { fetch: fakeFetch({ body: { ...LOOKUP_PAUSED, coverage } }).fetch });
+    expect(r.stdout).toMatch(/County office:\s+Chester County GIS, https:\/\/example\.gov\/gis, gis@example\.gov/);
+    // CONTROL: the fixture's null email prints nothing after the url.
+    const c = await uks(["lookup", "1 N High St, West Chester, PA"], { fetch: fakeFetch({ body: LOOKUP_PAUSED }).fetch });
+    expect(c.stdout).toMatch(/County office:\s+Chester County GIS, https:\/\/example\.gov\/gis\s*$/m);
+  });
+
   it("the paused fixture is the shape the core builds", () => {
     const { coverage } = LOOKUP_PAUSED;
     expect(

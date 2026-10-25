@@ -109,7 +109,7 @@ export function accessBlocks(entry: { flags: AccessFlags } | null | undefined, f
 
 /** What pausedAnswer reads from a county record. */
 export interface AccessRecordLike {
-  contact?: { department?: string | null; url?: string | null } | null;
+  contact?: { department?: string | null; url?: string | null; email?: string | null } | null;
   /** The record's own endpoints: their hosts are what a withheld answer must not name. */
   endpoints?: ReadonlyArray<{ url: string }> | null;
 }
@@ -306,8 +306,12 @@ export interface CountyPausedAnswer {
    *  under free_discovery when it names the county's service (discoverySafeContact). */
   citation_url: string | null;
   since: string;
-  /** The county office that holds the records, from the record's contact. */
-  county_office: { department: string | null; url: string | null } | null;
+  /** The county office that holds the records, from the record's contact: its
+   *  department, url and email, each as the record has it. Under free_discovery
+   *  a value naming the county's service is null (discoverySafeContact), an
+   *  email at an endpoint host included; the email is otherwise shown, since it
+   *  is how a person asks the county for the data this answer cannot give. */
+  county_office: { department: string | null; url: string | null; email: string | null } | null;
   /** The free county page; null when free lookup or discovery is paused, or the page is unknown. */
   free_alternatives: { county_page: string } | null;
   /** Always null: a paused county is not something to request. */
@@ -337,7 +341,11 @@ export function pausedAnswer(
     citation_url: withheld ? discoverySafeUrl(entry.citation_url, record) : entry.citation_url,
     since: entry.since,
     county_office: record?.contact
-      ? { department: office(record.contact.department), url: office(record.contact.url, discoverySafeUrl) }
+      ? {
+          department: office(record.contact.department),
+          url: office(record.contact.url, discoverySafeUrl),
+          email: office(record.contact.email),
+        }
       : null,
     free_alternatives: pageUrl ? { county_page: pageUrl } : null,
     request: null,
