@@ -160,4 +160,4 @@ The reset time goes to stderr and, with `--json`, into the error document as `re
 
 ## License
 
-MIT
+MIT. See [LICENSE](./LICENSE). © 2026 UrbanKit Studio LLC.
