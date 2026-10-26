@@ -71,15 +71,16 @@ jobs:
       - name: Test
         run: npm test
 
-      # tsup by its config path, the form the monorepo's packages/cli/CLAUDE.md
-      # documents. `prepublishOnly` still runs `npm run build` on a real publish.
+      # tsup by its config path, the form the source repo's maintainer notes
+      # document. `prepublishOnly` still runs `npm run build` on a real publish.
       - name: Build
         run: npm exec -- tsup --config tsup.config.ts
 
       # Against the EXTRACTED TARBALL, never the working tree: `files` and
       # .npmignore decide what ships, and the working tree does not. The
       # verifier asserts the exact five-file list (the `npm pack --dry-run`
-      # check from packages/cli/CLAUDE.md, made strict), the shebang, and that
+      # check from the source repo's maintainer notes, made strict), the
+      # shebang, and that
       # the packed bin answers `--version` with the packed version. The second
       # argument is where `npm ci` put @urbankitstudio/atlas, which the bundle
       # keeps external.
